@@ -13,6 +13,8 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { FAB, Modal, Portal, TextInput, Button, Switch, Checkbox, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -403,143 +405,147 @@ export default function LocationsScreen() {
       {/* Add / Edit Location & Custom Message Rules Modal */}
       <Portal>
         <Modal visible={showAddModal} onDismiss={() => setShowAddModal(false)} contentContainerStyle={styles.modal}>
-          <Text style={styles.modalTitle}>
-            {editingLocId ? 'Edit Location & Message' : 'Pin Location & Set Custom Message'}
-          </Text>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>
+                {editingLocId ? 'Edit Location & Message' : 'Pin Location & Set Custom Message'}
+              </Text>
 
-          <TextInput
-            label="Location Name / Label"
-            value={locationName}
-            onChangeText={setLocationName}
-            mode="outlined"
-            placeholder='e.g. "Hostel Gate", "College Campus", "Home"'
-            left={<TextInput.Icon icon="map-marker-outline" color={Colors.textSecondary} />}
-            style={styles.modalInput}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.secondary}
-            textColor={Colors.text}
-            theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-          />
-
-          {/* Map and GPS Buttons Row */}
-          <View style={styles.mapButtonsRow}>
-            <Button
-              mode="contained"
-              onPress={openMapStudio}
-              icon="map-search"
-              buttonColor={Colors.secondary}
-              textColor="#FFFFFF"
-              style={[styles.pickerBtn, { flex: 1.2 }]}
-            >
-              Pick on Map 🗺️
-            </Button>
-            <Button
-              mode="outlined"
-              onPress={getCurrentLocation}
-              loading={gettingLocation}
-              icon="crosshairs-gps"
-              style={[styles.pickerBtn, { flex: 1 }]}
-              textColor={Colors.secondary}
-            >
-              Current GPS
-            </Button>
-          </View>
-
-          <View style={styles.coordRow}>
-            <TextInput
-              label="Latitude"
-              value={latitude}
-              onChangeText={setLatitude}
-              mode="outlined"
-              placeholder="e.g. 28.6139"
-              keyboardType="decimal-pad"
-              style={[styles.modalInput, { flex: 1 }]}
-              outlineColor={Colors.border}
-              activeOutlineColor={Colors.secondary}
-              textColor={Colors.text}
-              theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-            />
-            <TextInput
-              label="Longitude"
-              value={longitude}
-              onChangeText={setLongitude}
-              mode="outlined"
-              placeholder="e.g. 77.2090"
-              keyboardType="decimal-pad"
-              style={[styles.modalInput, { flex: 1 }]}
-              outlineColor={Colors.border}
-              activeOutlineColor={Colors.secondary}
-              textColor={Colors.text}
-              theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-            />
-            <TextInput
-              label="Radius (m)"
-              value={radius}
-              onChangeText={setRadius}
-              mode="outlined"
-              keyboardType="number-pad"
-              style={[styles.modalInput, { width: 90 }]}
-              outlineColor={Colors.border}
-              activeOutlineColor={Colors.secondary}
-              textColor={Colors.text}
-              theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-            />
-          </View>
-
-          {/* Quick Message Templates Section */}
-          <Text style={styles.templatesLabel}>Choose or Customize Message Template:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templateChipsScroll}>
-            {PRESET_TEMPLATES.map((item, idx) => (
-              <Chip
-                key={idx}
+              <TextInput
+                label="Location Name / Label"
+                value={locationName}
+                onChangeText={setLocationName}
                 mode="outlined"
-                onPress={() => setMessageTemplate(item.template)}
-                style={styles.templateChip}
-                textStyle={{ fontSize: 11, fontWeight: '600' }}
-              >
-                {item.label}
-              </Chip>
-            ))}
-          </ScrollView>
+                placeholder='e.g. "Hostel Gate", "College Campus", "Home"'
+                left={<TextInput.Icon icon="map-marker-outline" color={Colors.textSecondary} />}
+                style={styles.modalInput}
+                outlineColor={Colors.border}
+                activeOutlineColor={Colors.secondary}
+                textColor={Colors.text}
+                theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+              />
 
-          {/* Custom Message Editor */}
-          <TextInput
-            label="WhatsApp Message to Send"
-            value={messageTemplate}
-            onChangeText={setMessageTemplate}
-            mode="outlined"
-            multiline
-            numberOfLines={3}
-            left={<TextInput.Icon icon="message-text-outline" color={Colors.textSecondary} />}
-            style={styles.modalInput}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.secondary}
-            textColor={Colors.text}
-            theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-          />
+              {/* Map and GPS Buttons Row */}
+              <View style={styles.mapButtonsRow}>
+                <Button
+                  mode="contained"
+                  onPress={openMapStudio}
+                  icon="map-search"
+                  buttonColor={Colors.secondary}
+                  textColor="#FFFFFF"
+                  style={[styles.pickerBtn, { flex: 1.2 }]}
+                >
+                  Pick on Map 🗺️
+                </Button>
+                <Button
+                  mode="outlined"
+                  onPress={getCurrentLocation}
+                  loading={gettingLocation}
+                  icon="crosshairs-gps"
+                  style={[styles.pickerBtn, { flex: 1 }]}
+                  textColor={Colors.secondary}
+                >
+                  Current GPS
+                </Button>
+              </View>
 
-          {/* Variable Placeholders */}
-          <View style={styles.tagsRow}>
-            <Text style={{ fontSize: 11, color: Colors.textMuted }}>Insert tag:</Text>
-            <TouchableOpacity onPress={() => insertPlaceholder('{location}')} style={styles.tagBadge}>
-              <Text style={styles.tagText}>{'{location}'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => insertPlaceholder('{time}')} style={styles.tagBadge}>
-              <Text style={styles.tagText}>{'{time}'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => insertPlaceholder('{date}')} style={styles.tagBadge}>
-              <Text style={styles.tagText}>{'{date}'}</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.coordRow}>
+                <TextInput
+                  label="Latitude"
+                  value={latitude}
+                  onChangeText={setLatitude}
+                  mode="outlined"
+                  placeholder="e.g. 28.6139"
+                  keyboardType="decimal-pad"
+                  style={[styles.modalInput, { flex: 1 }]}
+                  outlineColor={Colors.border}
+                  activeOutlineColor={Colors.secondary}
+                  textColor={Colors.text}
+                  theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+                />
+                <TextInput
+                  label="Longitude"
+                  value={longitude}
+                  onChangeText={setLongitude}
+                  mode="outlined"
+                  placeholder="e.g. 77.2090"
+                  keyboardType="decimal-pad"
+                  style={[styles.modalInput, { flex: 1 }]}
+                  outlineColor={Colors.border}
+                  activeOutlineColor={Colors.secondary}
+                  textColor={Colors.text}
+                  theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+                />
+                <TextInput
+                  label="Radius (m)"
+                  value={radius}
+                  onChangeText={setRadius}
+                  mode="outlined"
+                  keyboardType="number-pad"
+                  style={[styles.modalInput, { width: 90 }]}
+                  outlineColor={Colors.border}
+                  activeOutlineColor={Colors.secondary}
+                  textColor={Colors.text}
+                  theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+                />
+              </View>
 
-          <View style={styles.modalActions}>
-            <Button mode="outlined" onPress={() => setShowAddModal(false)} textColor={Colors.textSecondary} style={styles.modalBtn}>
-              Cancel
-            </Button>
-            <Button mode="contained" onPress={handleSave} loading={saving} disabled={saving} buttonColor={Colors.secondary} style={styles.modalBtn}>
-              {editingLocId ? 'Update Location & Message' : 'Pin Location & Save'}
-            </Button>
-          </View>
+              {/* Quick Message Templates Section */}
+              <Text style={styles.templatesLabel}>Choose or Customize Message Template:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templateChipsScroll}>
+                {PRESET_TEMPLATES.map((item, idx) => (
+                  <Chip
+                    key={idx}
+                    mode="outlined"
+                    onPress={() => setMessageTemplate(item.template)}
+                    style={styles.templateChip}
+                    textStyle={{ fontSize: 11, fontWeight: '600' }}
+                  >
+                    {item.label}
+                  </Chip>
+                ))}
+              </ScrollView>
+
+              {/* Custom Message Editor */}
+              <TextInput
+                label="WhatsApp Message to Send"
+                value={messageTemplate}
+                onChangeText={setMessageTemplate}
+                mode="outlined"
+                multiline
+                numberOfLines={3}
+                left={<TextInput.Icon icon="message-text-outline" color={Colors.textSecondary} />}
+                style={styles.modalInput}
+                outlineColor={Colors.border}
+                activeOutlineColor={Colors.secondary}
+                textColor={Colors.text}
+                theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+              />
+
+              {/* Variable Placeholders */}
+              <View style={styles.tagsRow}>
+                <Text style={{ fontSize: 11, color: Colors.textMuted }}>Insert tag:</Text>
+                <TouchableOpacity onPress={() => insertPlaceholder('{location}')} style={styles.tagBadge}>
+                  <Text style={styles.tagText}>{'{location}'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => insertPlaceholder('{time}')} style={styles.tagBadge}>
+                  <Text style={styles.tagText}>{'{time}'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => insertPlaceholder('{date}')} style={styles.tagBadge}>
+                  <Text style={styles.tagText}>{'{date}'}</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.modalActions}>
+                <Button mode="outlined" onPress={() => setShowAddModal(false)} textColor={Colors.textSecondary} style={styles.modalBtn}>
+                  Cancel
+                </Button>
+                <Button mode="contained" onPress={handleSave} loading={saving} disabled={saving} buttonColor={Colors.secondary} style={styles.modalBtn}>
+                  {editingLocId ? 'Update Location & Message' : 'Pin Location & Save'}
+                </Button>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </Modal>
 
         {/* Assign Contacts Modal */}
@@ -625,7 +631,7 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: Fonts.sizes.lg, color: Colors.text, fontWeight: '700' },
   emptySubtext: { fontSize: Fonts.sizes.sm, color: Colors.textMuted, textAlign: 'center', paddingHorizontal: Spacing.xxl },
   fab: { position: 'absolute', right: Spacing.lg, bottom: Spacing.lg, backgroundColor: Colors.secondary, borderRadius: 28, ...Shadows.large },
-  modal: { backgroundColor: Colors.surface, margin: Spacing.lg, maxWidth: 580, alignSelf: 'center', width: '92%', borderRadius: BorderRadius.xl, padding: Spacing.xl },
+  modal: { backgroundColor: Colors.surface, margin: Spacing.md, maxWidth: 580, maxHeight: '85%', alignSelf: 'center', width: '92%', borderRadius: BorderRadius.xl, padding: Spacing.lg },
   modalTitle: { fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.text, marginBottom: Spacing.md },
   modalSubtitle: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginBottom: Spacing.sm },
   contactCheckRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },

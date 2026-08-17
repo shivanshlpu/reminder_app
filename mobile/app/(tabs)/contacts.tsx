@@ -9,6 +9,8 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { FAB, Modal, Portal, TextInput, Button, Switch } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -168,70 +170,74 @@ export default function ContactsScreen() {
       {/* Add / Edit Contact Modal */}
       <Portal>
         <Modal visible={showAddModal} onDismiss={() => setShowAddModal(false)} contentContainerStyle={styles.modal}>
-          <Text style={styles.modalTitle}>
-            {editingId ? 'Edit Recipient' : 'Add WhatsApp Recipient'}
-          </Text>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>
+                {editingId ? 'Edit Recipient' : 'Add WhatsApp Recipient'}
+              </Text>
 
-          <TextInput
-            label="Name / Label"
-            value={contactName}
-            onChangeText={setContactName}
-            mode="outlined"
-            placeholder='e.g. "Mom", "Dad", "Hostel Roommate"'
-            left={<TextInput.Icon icon="account-outline" color={Colors.textSecondary} />}
-            style={styles.modalInput}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.primary}
-            textColor={Colors.text}
-            theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-          />
+              <TextInput
+                label="Name / Label"
+                value={contactName}
+                onChangeText={setContactName}
+                mode="outlined"
+                placeholder='e.g. "Mom", "Dad", "Hostel Roommate"'
+                left={<TextInput.Icon icon="account-outline" color={Colors.textSecondary} />}
+                style={styles.modalInput}
+                outlineColor={Colors.border}
+                activeOutlineColor={Colors.primary}
+                textColor={Colors.text}
+                theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+              />
 
-          <TextInput
-            label="WhatsApp Phone Number"
-            value={phone}
-            onChangeText={setPhone}
-            mode="outlined"
-            placeholder='e.g. 9009149694 or 919009149694'
-            keyboardType="phone-pad"
-            left={<TextInput.Icon icon="whatsapp" color={Colors.primary} />}
-            style={styles.modalInput}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.primary}
-            textColor={Colors.text}
-            theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-          />
-          <Text style={styles.phoneHint}>
-            💡 10-digit numbers automatically get Indian country code (+91).
-          </Text>
+              <TextInput
+                label="WhatsApp Phone Number"
+                value={phone}
+                onChangeText={setPhone}
+                mode="outlined"
+                placeholder='e.g. 9009149694 or 919009149694'
+                keyboardType="phone-pad"
+                left={<TextInput.Icon icon="whatsapp" color={Colors.primary} />}
+                style={styles.modalInput}
+                outlineColor={Colors.border}
+                activeOutlineColor={Colors.primary}
+                textColor={Colors.text}
+                theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+              />
+              <Text style={styles.phoneHint}>
+                💡 10-digit numbers automatically get Indian country code (+91).
+              </Text>
 
-          <View style={styles.groupToggleRow}>
-            <Text style={styles.groupToggleLabel}>Is this a WhatsApp Group?</Text>
-            <Switch value={isGroup} onValueChange={setIsGroup} color={Colors.primary} />
-          </View>
+              <View style={styles.groupToggleRow}>
+                <Text style={styles.groupToggleLabel}>Is this a WhatsApp Group?</Text>
+                <Switch value={isGroup} onValueChange={setIsGroup} color={Colors.primary} />
+              </View>
 
-          {isGroup && (
-            <TextInput
-              label="Group JID (optional)"
-              value={groupId}
-              onChangeText={setGroupId}
-              mode="outlined"
-              placeholder="e.g. 120363041234567890@g.us"
-              style={styles.modalInput}
-              outlineColor={Colors.border}
-              activeOutlineColor={Colors.primary}
-              textColor={Colors.text}
-              theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-            />
-          )}
+              {isGroup && (
+                <TextInput
+                  label="Group JID (optional)"
+                  value={groupId}
+                  onChangeText={setGroupId}
+                  mode="outlined"
+                  placeholder="e.g. 120363041234567890@g.us"
+                  style={styles.modalInput}
+                  outlineColor={Colors.border}
+                  activeOutlineColor={Colors.primary}
+                  textColor={Colors.text}
+                  theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+                />
+              )}
 
-          <View style={styles.modalActions}>
-            <Button mode="outlined" onPress={() => setShowAddModal(false)} textColor={Colors.textSecondary} style={styles.modalBtn}>
-              Cancel
-            </Button>
-            <Button mode="contained" onPress={handleSave} loading={saving} disabled={saving} buttonColor={Colors.primary} style={styles.modalBtn}>
-              Save Recipient
-            </Button>
-          </View>
+              <View style={styles.modalActions}>
+                <Button mode="outlined" onPress={() => setShowAddModal(false)} textColor={Colors.textSecondary} style={styles.modalBtn}>
+                  Cancel
+                </Button>
+                <Button mode="contained" onPress={handleSave} loading={saving} disabled={saving} buttonColor={Colors.primary} style={styles.modalBtn}>
+                  Save Recipient
+                </Button>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </Modal>
       </Portal>
     </View>
@@ -274,7 +280,7 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: Fonts.sizes.lg, color: Colors.text, fontWeight: '700' },
   emptySubtext: { fontSize: Fonts.sizes.sm, color: Colors.textMuted, textAlign: 'center', paddingHorizontal: Spacing.xxl },
   fab: { position: 'absolute', right: Spacing.lg, bottom: Spacing.lg, backgroundColor: Colors.primary, borderRadius: 28, ...Shadows.large },
-  modal: { backgroundColor: Colors.surface, margin: Spacing.lg, maxWidth: 500, alignSelf: 'center', width: '90%', borderRadius: BorderRadius.xl, padding: Spacing.xxl },
+  modal: { backgroundColor: Colors.surface, margin: Spacing.md, maxWidth: 500, maxHeight: '85%', alignSelf: 'center', width: '90%', borderRadius: BorderRadius.xl, padding: Spacing.lg },
   modalTitle: { fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.text, marginBottom: Spacing.lg },
   modalInput: { backgroundColor: Colors.surface, marginBottom: Spacing.md },
   phoneHint: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, marginTop: -Spacing.sm, marginBottom: Spacing.md },

@@ -9,6 +9,8 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { FAB, Modal, Portal, TextInput, Button, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -273,82 +275,86 @@ export default function ExpensesScreen() {
       {/* Add Expense Modal */}
       <Portal>
         <Modal visible={showAddModal} onDismiss={() => setShowAddModal(false)} contentContainerStyle={styles.modal}>
-          <Text style={styles.modalTitle}>Record Expense</Text>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>Record Expense</Text>
 
-          <TextInput
-            label="Amount (INR)"
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="decimal-pad"
-            mode="outlined"
-            placeholder="0.00"
-            left={<TextInput.Affix text="Rs. " />}
-            style={styles.modalInput}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.primary}
-            textColor={Colors.text}
-            theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-          />
+              <TextInput
+                label="Amount (INR)"
+                value={amount}
+                onChangeText={setAmount}
+                keyboardType="decimal-pad"
+                mode="outlined"
+                placeholder="0.00"
+                left={<TextInput.Affix text="Rs. " />}
+                style={styles.modalInput}
+                outlineColor={Colors.border}
+                activeOutlineColor={Colors.primary}
+                textColor={Colors.text}
+                theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+              />
 
-          <Text style={styles.sectionSubtitle}>Select Category</Text>
-          <ScrollView style={{ maxHeight: 180, marginBottom: Spacing.md }}>
-            <View style={styles.categoryGrid}>
-              {categories.map((cat) => {
-                const isSelected = selectedCategory?.id === cat.id;
-                return (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[styles.catOption, isSelected && styles.catOptionSelected]}
-                    onPress={() => setSelectedCategory(cat)}
-                  >
-                    <MaterialCommunityIcons
-                      name={(cat.icon as any) || 'cash'}
-                      size={20}
-                      color={isSelected ? '#FFFFFF' : cat.color || Colors.primary}
-                    />
-                    <Text style={[styles.catOptionText, isSelected && styles.catOptionTextSelected]} numberOfLines={1}>
-                      {cat.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </ScrollView>
+              <Text style={styles.sectionSubtitle}>Select Category</Text>
+              <View style={{ marginBottom: Spacing.md }}>
+                <View style={styles.categoryGrid}>
+                  {categories.map((cat) => {
+                    const isSelected = selectedCategory?.id === cat.id;
+                    return (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[styles.catOption, isSelected && styles.catOptionSelected]}
+                        onPress={() => setSelectedCategory(cat)}
+                      >
+                        <MaterialCommunityIcons
+                          name={(cat.icon as any) || 'cash'}
+                          size={20}
+                          color={isSelected ? '#FFFFFF' : cat.color || Colors.primary}
+                        />
+                        <Text style={[styles.catOptionText, isSelected && styles.catOptionTextSelected]} numberOfLines={1}>
+                          {cat.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
 
-          <TextInput
-            label="Date"
-            value={expenseDate}
-            onChangeText={setExpenseDate}
-            mode="outlined"
-            placeholder="YYYY-MM-DD"
-            style={styles.modalInput}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.primary}
-            textColor={Colors.text}
-            theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-          />
+              <TextInput
+                label="Date"
+                value={expenseDate}
+                onChangeText={setExpenseDate}
+                mode="outlined"
+                placeholder="YYYY-MM-DD"
+                style={styles.modalInput}
+                outlineColor={Colors.border}
+                activeOutlineColor={Colors.primary}
+                textColor={Colors.text}
+                theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+              />
 
-          <TextInput
-            label="Note / Description (Optional)"
-            value={note}
-            onChangeText={setNote}
-            mode="outlined"
-            placeholder="e.g. Amazon order / Barber haircut"
-            style={styles.modalInput}
-            outlineColor={Colors.border}
-            activeOutlineColor={Colors.primary}
-            textColor={Colors.text}
-            theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-          />
+              <TextInput
+                label="Note / Description (Optional)"
+                value={note}
+                onChangeText={setNote}
+                mode="outlined"
+                placeholder="e.g. Amazon order / Barber haircut"
+                style={styles.modalInput}
+                outlineColor={Colors.border}
+                activeOutlineColor={Colors.primary}
+                textColor={Colors.text}
+                theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+              />
 
-          <View style={styles.modalActions}>
-            <Button mode="outlined" onPress={() => setShowAddModal(false)} textColor={Colors.textSecondary} style={styles.modalBtn}>
-              Cancel
-            </Button>
-            <Button mode="contained" onPress={handleSave} loading={saving} disabled={saving} buttonColor={Colors.primary} style={styles.modalBtn}>
-              Save Expense
-            </Button>
-          </View>
+              <View style={styles.modalActions}>
+                <Button mode="outlined" onPress={() => setShowAddModal(false)} textColor={Colors.textSecondary} style={styles.modalBtn}>
+                  Cancel
+                </Button>
+                <Button mode="contained" onPress={handleSave} loading={saving} disabled={saving} buttonColor={Colors.primary} style={styles.modalBtn}>
+                  Save Expense
+                </Button>
+              </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </Modal>
       </Portal>
     </View>
@@ -397,7 +403,7 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: Fonts.sizes.lg, color: Colors.text, fontWeight: '700' },
   emptySubtext: { fontSize: Fonts.sizes.sm, color: Colors.textMuted },
   fab: { position: 'absolute', right: Spacing.lg, bottom: Spacing.lg, backgroundColor: Colors.primary, borderRadius: 28, ...Shadows.large },
-  modal: { backgroundColor: Colors.surface, margin: Spacing.lg, maxWidth: 540, alignSelf: 'center', width: '92%', borderRadius: BorderRadius.xl, padding: Spacing.xl },
+  modal: { backgroundColor: Colors.surface, margin: Spacing.md, maxWidth: 540, maxHeight: '85%', alignSelf: 'center', width: '92%', borderRadius: BorderRadius.xl, padding: Spacing.lg },
   modalTitle: { fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.text, marginBottom: Spacing.md },
   modalInput: { backgroundColor: Colors.surface, marginBottom: Spacing.md },
   sectionSubtitle: { fontSize: Fonts.sizes.xs, fontWeight: '700', color: Colors.textSecondary, marginBottom: Spacing.xs, textTransform: 'uppercase' },

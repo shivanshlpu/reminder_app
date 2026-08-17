@@ -91,19 +91,23 @@ function RootLayoutNav() {
   );
 }
 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
 export default function RootLayout() {
   return (
-    <PaperProvider theme={customTheme}>
-      <AuthProvider>
-        <DatabaseProvider>
-          <ToastProvider>
-            <ResponsiveContainer>
-              <RootLayoutNav />
-            </ResponsiveContainer>
-          </ToastProvider>
-        </DatabaseProvider>
-      </AuthProvider>
-    </PaperProvider>
+    <SafeAreaProvider>
+      <PaperProvider theme={customTheme}>
+        <AuthProvider>
+          <DatabaseProvider>
+            <ToastProvider>
+              <ResponsiveContainer>
+                <RootLayoutNav />
+              </ResponsiveContainer>
+            </ToastProvider>
+          </DatabaseProvider>
+        </AuthProvider>
+      </PaperProvider>
+    </SafeAreaProvider>
   );
 }
 
