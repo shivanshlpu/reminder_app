@@ -7,11 +7,13 @@
 import React, { ReactNode } from 'react';
 import { View, StyleSheet, Platform, SafeAreaView } from 'react-native';
 import { Colors } from '../constants/theme';
+import { DownloadAppBanner } from './DownloadAppBanner';
 
 export function ResponsiveContainer({ children }: { children: ReactNode }) {
   if (Platform.OS === 'web') {
     return (
       <View style={styles.webWrapper}>
+        <DownloadAppBanner />
         <View style={styles.webContainer}>
           {children}
         </View>
