@@ -1,0 +1,22 @@
+{
+  "short_name": "ExpenseTracker",
+  "name": "Expense & Reminder Tracker",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon.png",
+      "type": "image/png",
+      "sizes": "192x192 512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#F8FAFC",
+  "theme_color": "#6C63FF",
+  "display": "standalone",
+  "orientation": "portrait"
+}
