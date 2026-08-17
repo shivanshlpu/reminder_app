@@ -24,7 +24,14 @@ import { useContacts, Contact } from '../../hooks/useContacts';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { whatsappApi } from '../../services/whatsapp-api';
-import { startGeofencing, GeofenceRegion } from '../../services/geofence';
+import {
+  startGeofencing,
+  GeofenceRegion,
+  getTodayDateString,
+  loadDailyTriggers,
+  recordLocationTriggeredToday,
+  resetLocationDailyTrigger,
+} from '../../services/geofence';
 import { MapPickerModal } from '../../components/MapPickerModal';
 import { confirmAction, showMessage } from '../../utils/dialogs';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
@@ -51,6 +58,7 @@ export default function LocationsScreen() {
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [activeLocation, setActiveLocation] = useState<PinnedLocation | null>(null);
   const [assignedContactsMap, setAssignedContactsMap] = useState<Record<number, boolean>>({});
+  const [dailyTriggerMap, setDailyTriggerMap] = useState<Record<number, string>>({});
 
   const [editingLocId, setEditingLocId] = useState<number | null>(null);
   const [locationName, setLocationName] = useState('');
@@ -62,6 +70,10 @@ export default function LocationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [sendingAlertId, setSendingAlertId] = useState<number | null>(null);
+
+  useEffect(() => {
+    loadDailyTriggers().then((map) => setDailyTriggerMap({ ...map }));
+  }, []);
 
   useEffect(() => {
     async function syncAndStartGeofences() {
@@ -279,12 +291,19 @@ export default function LocationsScreen() {
           }
         }
 
+        await recordLocationTriggeredToday(loc.id);
+        const updated = await loadDailyTriggers();
+        setDailyTriggerMap({ ...updated });
+
         showMessage(
           'WhatsApp Alert Sent!',
           `Delivered to ${successful} recipient(s): "${messageText}"`,
           'whatsapp'
         );
       } else {
+        await recordLocationTriggeredToday(loc.id);
+        const updated = await loadDailyTriggers();
+        setDailyTriggerMap({ ...updated });
         showMessage('Alert Dispatched', 'Message queued to WhatsApp service', 'info');
       }
     } catch (error: any) {
@@ -294,10 +313,19 @@ export default function LocationsScreen() {
     }
   };
 
+  const handleResetDailyTrigger = async (loc: PinnedLocation) => {
+    await resetLocationDailyTrigger(loc.id);
+    const updated = await loadDailyTriggers();
+    setDailyTriggerMap({ ...updated });
+    showMessage('Daily Alert Reset', `"${loc.name}" can auto-trigger once more today`, 'info');
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchLocations();
     await fetchContacts();
+    const triggers = await loadDailyTriggers();
+    setDailyTriggerMap({ ...triggers });
     setRefreshing(false);
   };
 
@@ -305,68 +333,92 @@ export default function LocationsScreen() {
     setMessageTemplate((prev) => `${prev} ${tag}`);
   };
 
-  const renderLocationCard = (item: PinnedLocation) => (
-    <View key={item.id} style={[styles.locationCard, isWide && styles.locationCardDesktop]}>
-      <View style={styles.locationHeader}>
-        <View style={styles.locationIconWrap}>
-          <MaterialCommunityIcons name="map-marker-radius" size={24} color={Colors.secondary} />
+  const renderLocationCard = (item: PinnedLocation) => {
+    const isTriggeredToday = dailyTriggerMap[item.id] === getTodayDateString();
+
+    return (
+      <View key={item.id} style={[styles.locationCard, isWide && styles.locationCardDesktop]}>
+        <View style={styles.locationHeader}>
+          <View style={styles.locationIconWrap}>
+            <MaterialCommunityIcons name="map-marker-radius" size={24} color={Colors.secondary} />
+          </View>
+          <View style={styles.locationInfo}>
+            <Text style={styles.locationName}>{item.name}</Text>
+            <Text style={styles.locationCoords}>
+              📍 {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)} • {item.radius || 10}m Gate Radius
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => openAddModal(item)} style={styles.editBtn}>
+            <MaterialCommunityIcons name="pencil-outline" size={20} color={Colors.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => handleDelete(item.id, item.name)} style={styles.deleteBtn}>
+            <MaterialCommunityIcons name="trash-can-outline" size={20} color={Colors.accent} />
+          </TouchableOpacity>
         </View>
-        <View style={styles.locationInfo}>
-          <Text style={styles.locationName}>{item.name}</Text>
-          <Text style={styles.locationCoords}>
-            📍 {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)} • {item.radius || 10}m Gate Radius
+
+        {/* 1-Per-Day Trigger Status Indicator */}
+        <View style={styles.dailyStatusRow}>
+          <View style={[styles.dailyStatusBadge, isTriggeredToday ? styles.dailyStatusBadgeSent : styles.dailyStatusBadgeReady]}>
+            <MaterialCommunityIcons
+              name={isTriggeredToday ? "check-decagram" : "clock-check-outline"}
+              size={14}
+              color={isTriggeredToday ? Colors.success : Colors.secondary}
+            />
+            <Text style={[styles.dailyStatusText, isTriggeredToday ? { color: Colors.success } : { color: Colors.secondary }]}>
+              {isTriggeredToday ? 'Sent Today (1/1 Auto-Alert Done)' : '1-Per-Day Ready (0/1 Auto-Alert)'}
+            </Text>
+          </View>
+          {isTriggeredToday && (
+            <TouchableOpacity onPress={() => handleResetDailyTrigger(item)} style={styles.resetDailyBtn}>
+              <MaterialCommunityIcons name="refresh" size={13} color={Colors.textSecondary} />
+              <Text style={styles.resetDailyText}>Reset Today</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.locationFooter}>
+          <TouchableOpacity style={styles.contactBadge} onPress={() => openAssignModal(item)}>
+            <MaterialCommunityIcons name="account-group-outline" size={16} color={Colors.secondary} />
+            <Text style={styles.contactCount}>
+              {item.contact_count || 0} assigned • <Text style={{ color: Colors.secondary, fontWeight: '700' }}>Manage</Text>
+            </Text>
+          </TouchableOpacity>
+
+          <View style={styles.autoSendRow}>
+            <Text style={styles.autoSendLabel}>Auto-send</Text>
+            <Switch
+              value={item.auto_send === 1}
+              onValueChange={() => toggleAutoSend(item)}
+              color={Colors.secondary}
+            />
+          </View>
+        </View>
+
+        <View style={styles.templateBox}>
+          <Text style={styles.templateHeader}>Custom WhatsApp Message:</Text>
+          <Text style={styles.templateText} numberOfLines={3}>
+            "{item.message_template}"
           </Text>
         </View>
-        <TouchableOpacity onPress={() => openAddModal(item)} style={styles.editBtn}>
-          <MaterialCommunityIcons name="pencil-outline" size={20} color={Colors.secondary} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => handleDelete(item.id, item.name)} style={styles.deleteBtn}>
-          <MaterialCommunityIcons name="trash-can-outline" size={20} color={Colors.accent} />
-        </TouchableOpacity>
-      </View>
 
-      <View style={styles.locationFooter}>
-        <TouchableOpacity style={styles.contactBadge} onPress={() => openAssignModal(item)}>
-          <MaterialCommunityIcons name="account-group-outline" size={16} color={Colors.secondary} />
-          <Text style={styles.contactCount}>
-            {item.contact_count || 0} assigned • <Text style={{ color: Colors.secondary, fontWeight: '700' }}>Manage</Text>
-          </Text>
-        </TouchableOpacity>
-
-        <View style={styles.autoSendRow}>
-          <Text style={styles.autoSendLabel}>Auto-send</Text>
-          <Switch
-            value={item.auto_send === 1}
-            onValueChange={() => toggleAutoSend(item)}
-            color={Colors.secondary}
-          />
+        <View style={styles.actionRow}>
+          <Button
+            mode="contained"
+            icon="send"
+            buttonColor={Colors.secondary}
+            textColor="#FFFFFF"
+            loading={sendingAlertId === item.id}
+            disabled={sendingAlertId === item.id}
+            onPress={() => handleSendAlertNow(item)}
+            style={styles.sendAlertBtn}
+            labelStyle={{ fontSize: 13, fontWeight: '700' }}
+          >
+            Send "{item.name}" Alert Now
+          </Button>
         </View>
       </View>
-
-      <View style={styles.templateBox}>
-        <Text style={styles.templateHeader}>Custom WhatsApp Message:</Text>
-        <Text style={styles.templateText} numberOfLines={3}>
-          "{item.message_template}"
-        </Text>
-      </View>
-
-      <View style={styles.actionRow}>
-        <Button
-          mode="contained"
-          icon="send"
-          buttonColor={Colors.secondary}
-          textColor="#FFFFFF"
-          loading={sendingAlertId === item.id}
-          disabled={sendingAlertId === item.id}
-          onPress={() => handleSendAlertNow(item)}
-          style={styles.sendAlertBtn}
-          labelStyle={{ fontSize: 13, fontWeight: '700' }}
-        >
-          Send "{item.name}" Alert Now
-        </Button>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -618,6 +670,45 @@ const styles = StyleSheet.create({
   locationCoords: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, marginTop: 2 },
   editBtn: { padding: 6, marginRight: 2 },
   deleteBtn: { padding: 6 },
+  dailyStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
+    paddingVertical: 2,
+  },
+  dailyStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+  },
+  dailyStatusBadgeSent: {
+    backgroundColor: '#DCFCE7', // light green tint
+  },
+  dailyStatusBadgeReady: {
+    backgroundColor: Colors.secondaryBg,
+  },
+  dailyStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  resetDailyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.background,
+  },
+  resetDailyText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
   locationFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
   contactBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   contactCount: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, fontWeight: '500' },

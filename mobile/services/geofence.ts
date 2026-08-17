@@ -5,10 +5,11 @@
  */
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { whatsappApi } from './whatsapp-api';
 
 const GEOFENCE_RADIUS_DEFAULT = 10; // 10 meters default for gate entry precision!
-const COOLDOWN_MS = 15 * 60 * 1000; // 15-minute cooldown to prevent duplicate messages
+const STORAGE_DAILY_TRIGGERS_KEY = '@geofence_daily_triggers_state';
 
 export interface GeofenceRegion {
   id: number;
@@ -21,10 +22,74 @@ export interface GeofenceRegion {
   contacts: Array<{ phone: string; isGroup: boolean; name: string; contactId: number }>;
 }
 
-// Track last triggered time per location ID
-const lastTriggeredTimes: Record<number, number> = {};
+// Map of locationId -> "YYYY-MM-DD"
+let dailyTriggerCache: Record<number, string> = {};
+let isDailyCacheLoaded = false;
 let activeLocationWatcher: Location.LocationSubscription | null = null;
 let monitoredRegions: GeofenceRegion[] = [];
+
+/**
+ * Returns today's date formatted as YYYY-MM-DD in local time.
+ */
+export function getTodayDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Loads daily trigger state from persistent AsyncStorage into memory.
+ */
+export async function loadDailyTriggers(): Promise<Record<number, string>> {
+  if (isDailyCacheLoaded) return dailyTriggerCache;
+  try {
+    const stored = await AsyncStorage.getItem(STORAGE_DAILY_TRIGGERS_KEY);
+    if (stored) {
+      dailyTriggerCache = JSON.parse(stored);
+    }
+  } catch (e) {
+    console.warn('Failed to load daily geofence trigger states', e);
+  }
+  isDailyCacheLoaded = true;
+  return dailyTriggerCache;
+}
+
+/**
+ * Checks if a specific location has already sent its automatic message today.
+ */
+export function isLocationTriggeredToday(locationId: number): boolean {
+  const today = getTodayDateString();
+  return dailyTriggerCache[locationId] === today;
+}
+
+/**
+ * Records that a location has sent its alert today (persists to storage).
+ */
+export async function recordLocationTriggeredToday(locationId: number): Promise<void> {
+  await loadDailyTriggers();
+  const today = getTodayDateString();
+  dailyTriggerCache[locationId] = today;
+  try {
+    await AsyncStorage.setItem(STORAGE_DAILY_TRIGGERS_KEY, JSON.stringify(dailyTriggerCache));
+  } catch (e) {
+    console.error('Failed to save daily geofence trigger state', e);
+  }
+}
+
+/**
+ * Resets the daily trigger state for a location (allows re-triggering today).
+ */
+export async function resetLocationDailyTrigger(locationId: number): Promise<void> {
+  await loadDailyTriggers();
+  delete dailyTriggerCache[locationId];
+  try {
+    await AsyncStorage.setItem(STORAGE_DAILY_TRIGGERS_KEY, JSON.stringify(dailyTriggerCache));
+  } catch (e) {
+    console.error('Failed to reset daily geofence trigger state', e);
+  }
+}
 
 /**
  * Calculate precise distance between two GPS coordinates in meters using Haversine formula.
@@ -71,20 +136,22 @@ export async function requestLocationPermissions(): Promise<boolean> {
 }
 
 /**
- * Trigger the automatic arrival message when entering the gate radius.
+ * Trigger the automatic arrival message once per day per location when entering the gate radius.
  */
 async function triggerArrivalAlert(region: GeofenceRegion, currentDistance: number) {
-  const now = Date.now();
-  const lastTime = lastTriggeredTimes[region.id] || 0;
+  await loadDailyTriggers();
+  const today = getTodayDateString();
 
-  // Check 15-minute entry cooldown
-  if (now - lastTime < COOLDOWN_MS) {
+  // 1. Strict Once-Per-Day Guard: Skip if already sent today for this location
+  if (dailyTriggerCache[region.id] === today) {
     return;
   }
 
-  lastTriggeredTimes[region.id] = now;
+  // Mark as triggered immediately to prevent duplicate async triggers
+  dailyTriggerCache[region.id] = today;
+  recordLocationTriggeredToday(region.id).catch(() => {});
 
-  console.log(`📍 Gate Arrival Detected: Entered ${region.name} (${Math.round(currentDistance)}m away)!`);
+  console.log(`📍 1-Per-Day Gate Arrival: Entered ${region.name} (${Math.round(currentDistance)}m away) for the first time today!`);
 
   // Render template placeholders
   const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
@@ -103,7 +170,7 @@ async function triggerArrivalAlert(region: GeofenceRegion, currentDistance: numb
 
     try {
       await whatsappApi.sendMessage(recipients, region.name, undefined, messageText);
-      console.log(`✅ WhatsApp arrival alert sent to ${recipients.length} contact(s) for ${region.name}`);
+      console.log(`✅ WhatsApp 1-per-day arrival alert sent to ${recipients.length} contact(s) for ${region.name}`);
     } catch (err) {
       console.error('Failed to send automatic arrival message:', err);
     }
@@ -113,7 +180,7 @@ async function triggerArrivalAlert(region: GeofenceRegion, currentDistance: numb
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: `📍 Entered ${region.name} Gate`,
+        title: `📍 Entered ${region.name} (Daily Arrival Alert)`,
         body: `Auto-sent WhatsApp message: "${messageText}"`,
         sound: true,
       },
