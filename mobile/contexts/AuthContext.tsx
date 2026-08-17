@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.warn('Firebase login attempt failed or skipped, trying local auth:', firebaseErr?.message);
     }
 
-    // 2. Local Auth Fallback
+    // 2. Local Auth Verification
     const cleanEmail = email.trim().toLowerCase();
     const usersJson = await AsyncStorage.getItem(STORAGE_USERS_LIST_KEY);
     const usersMap: Record<string, { uid: string; passwordHash: string }> = usersJson ? JSON.parse(usersJson) : {};
@@ -92,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (usersMap[cleanEmail]) {
       const existing = usersMap[cleanEmail];
       if (existing.passwordHash !== password) {
-        throw new Error('Incorrect password');
+        throw new Error('Incorrect password. Please check your password and try again.');
       }
       const loggedUser: AppUser = { uid: existing.uid, email: cleanEmail };
       await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(loggedUser));
@@ -100,14 +100,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // If user doesn't exist locally yet, create a local session automatically
-    const newUid = 'local_' + cleanEmail.replace(/[^a-z0-9]/g, '_');
-    usersMap[cleanEmail] = { uid: newUid, passwordHash: password };
-    await AsyncStorage.setItem(STORAGE_USERS_LIST_KEY, JSON.stringify(usersMap));
-
-    const loggedUser: AppUser = { uid: newUid, email: cleanEmail };
-    await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(loggedUser));
-    setUser(loggedUser);
+    // Unregistered email -> throw error
+    throw new Error('No registered account found with this email. Please click "Create Account" to register first.');
   };
 
   const register = async (email: string, password: string) => {
@@ -124,10 +118,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.warn('Firebase register attempt failed or skipped, using local auth:', firebaseErr?.message);
     }
 
-    // 2. Local Auth Registration Fallback
+    // 2. Local Auth Registration
     const cleanEmail = email.trim().toLowerCase();
     const usersJson = await AsyncStorage.getItem(STORAGE_USERS_LIST_KEY);
     const usersMap: Record<string, { uid: string; passwordHash: string }> = usersJson ? JSON.parse(usersJson) : {};
+
+    if (usersMap[cleanEmail]) {
+      throw new Error('An account with this email address already exists. Please sign in instead.');
+    }
 
     const newUid = 'local_' + cleanEmail.replace(/[^a-z0-9]/g, '_');
     usersMap[cleanEmail] = { uid: newUid, passwordHash: password };
