@@ -5,6 +5,9 @@
 import { Platform } from 'react-native';
 
 function getInitialBackendUrl(): string {
+  if (process.env.EXPO_PUBLIC_BACKEND_URL) {
+    return process.env.EXPO_PUBLIC_BACKEND_URL;
+  }
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     const hostname = window.location.hostname || 'localhost';
     return `http://${hostname}:3001`;
