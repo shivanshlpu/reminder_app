@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Environment and sensitive data
+.env
+.env.*
+!.env.example
+auth_info/
+
+# Build outputs
+dist/
+web-build/
+.expo/
+*.tsbuildinfo
+
+# Logs and system files
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+Thumbs.db
+
+# OS / IDE generated
+.idea/
+.vscode/
