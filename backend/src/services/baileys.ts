@@ -136,15 +136,13 @@ class BaileysService {
             logger.info('Logged out from WhatsApp. Session cleared.');
             this.clearAuthFolder();
             this.reconnectAttempts = 0;
-          } else if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          } else {
             this.reconnectAttempts++;
-            logger.info(`Reconnecting to WhatsApp... attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+            const backoffDelay = Math.min(30000, 3000 * Math.pow(1.5, Math.min(this.reconnectAttempts, 6)));
+            logger.info(`Reconnecting to WhatsApp in ${Math.round(backoffDelay / 1000)}s... attempt #${this.reconnectAttempts}`);
             this.reconnectTimer = setTimeout(() => {
               this.initialize(false);
-            }, 5000);
-          } else {
-            logger.error('Max reconnect attempts reached. Waiting for manual connect.');
-            this.reconnectAttempts = 0;
+            }, backoffDelay);
           }
         } else if (connection === 'open') {
           this.status.connected = true;

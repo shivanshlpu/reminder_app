@@ -28,41 +28,62 @@ const STORAGE_USERS_LIST_KEY = '@expense_tracker_registered_users';
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AppUser | null>(null);
+  // Synchronously initialize user state from localStorage on Web to prevent login page flash
+  const getInitialUser = (): AppUser | null => {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const item = window.localStorage.getItem(STORAGE_USER_KEY);
+        if (item) {
+          const parsed = JSON.parse(item);
+          if (parsed && parsed.uid) return parsed;
+        }
+      } catch (e) {}
+    }
+    return null;
+  };
+
+  const [user, setUser] = useState<AppUser | null>(getInitialUser);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let isSubscribed = true;
 
-    // First try Firebase auth listener
-    let unsubscribeFirebase: (() => void) | null = null;
-    try {
-      unsubscribeFirebase = subscribeToAuthChanges((fbUser) => {
-        if (fbUser && isSubscribed) {
-          setUser({ uid: fbUser.uid, email: fbUser.email });
-          setLoading(false);
-        }
-      });
-    } catch (e) {
-      console.log('Firebase auth listener skipped (using local auth)');
-    }
-
-    // Also check local persisted user session
-    AsyncStorage.getItem(STORAGE_USER_KEY).then((storedUserJson) => {
-      if (isSubscribed && storedUserJson) {
-        try {
+    // Check AsyncStorage / local storage for persisted user session
+    const loadSession = async () => {
+      try {
+        const storedUserJson = await AsyncStorage.getItem(STORAGE_USER_KEY);
+        if (isSubscribed && storedUserJson) {
           const storedUser = JSON.parse(storedUserJson);
           if (storedUser && storedUser.uid) {
             setUser(storedUser);
           }
-        } catch (e) {
-          console.error('Failed to parse local stored user', e);
+        }
+      } catch (e) {
+        console.error('Failed to parse local stored user', e);
+      } finally {
+        if (isSubscribed) {
+          setLoading(false);
         }
       }
-      if (isSubscribed) {
-        setLoading(false);
-      }
-    });
+    };
+
+    loadSession();
+
+    // Firebase auth listener fallback if configured
+    let unsubscribeFirebase: (() => void) | null = null;
+    try {
+      unsubscribeFirebase = subscribeToAuthChanges((fbUser) => {
+        if (fbUser && isSubscribed) {
+          const newUser = { uid: fbUser.uid, email: fbUser.email };
+          setUser(newUser);
+          AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(newUser));
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(newUser));
+          }
+          setLoading(false);
+        }
+      });
+    } catch (e) {}
 
     return () => {
       isSubscribed = false;
@@ -70,14 +91,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const saveSession = async (loggedUser: AppUser) => {
+    await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(loggedUser));
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(loggedUser));
+    }
+    setUser(loggedUser);
+  };
+
   const login = async (email: string, password: string) => {
     // 1. Try Firebase login first if configured
     try {
       const fbUser = await loginUser(email, password);
       if (fbUser) {
         const newUser: AppUser = { uid: fbUser.uid, email: fbUser.email };
-        await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(newUser));
-        setUser(newUser);
+        await saveSession(newUser);
         return;
       }
     } catch (firebaseErr: any) {
@@ -95,8 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('Incorrect password. Please check your password and try again.');
       }
       const loggedUser: AppUser = { uid: existing.uid, email: cleanEmail };
-      await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(loggedUser));
-      setUser(loggedUser);
+      await saveSession(loggedUser);
       return;
     }
 
@@ -110,8 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const fbUser = await registerUser(email, password);
       if (fbUser) {
         const newUser: AppUser = { uid: fbUser.uid, email: fbUser.email };
-        await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(newUser));
-        setUser(newUser);
+        await saveSession(newUser);
         return;
       }
     } catch (firebaseErr: any) {
@@ -132,17 +158,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await AsyncStorage.setItem(STORAGE_USERS_LIST_KEY, JSON.stringify(usersMap));
 
     const loggedUser: AppUser = { uid: newUid, email: cleanEmail };
-    await AsyncStorage.setItem(STORAGE_USER_KEY, JSON.stringify(loggedUser));
-    setUser(loggedUser);
+    await saveSession(loggedUser);
   };
 
   const logout = async () => {
     try {
       await logoutUser();
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
     await AsyncStorage.removeItem(STORAGE_USER_KEY);
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(STORAGE_USER_KEY);
+    }
     setUser(null);
   };
 
