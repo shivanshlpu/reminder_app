@@ -136,21 +136,20 @@ export async function startGeofencing(regions: GeofenceRegion[]): Promise<void> 
     return;
   }
 
+  // If watcher is already active, updating monitoredRegions is sufficient!
+  if (activeLocationWatcher) {
+    return;
+  }
+
   const hasPerms = await requestLocationPermissions();
   if (!hasPerms) return;
-
-  // Remove previous watcher
-  if (activeLocationWatcher) {
-    activeLocationWatcher.remove();
-    activeLocationWatcher = null;
-  }
 
   try {
     activeLocationWatcher = await Location.watchPositionAsync(
       {
-        accuracy: Location.Accuracy.BestForNavigation,
-        distanceInterval: 2, // Check every 2 meters
-        timeInterval: 3000,   // Check every 3 seconds
+        accuracy: Location.Accuracy.Balanced,
+        distanceInterval: 5,
+        timeInterval: 5000,
       },
       (location) => {
         const { latitude, longitude } = location.coords;
@@ -173,9 +172,9 @@ export async function startGeofencing(regions: GeofenceRegion[]): Promise<void> 
       }
     );
 
-    console.log(`📍 Continuous 10m Gate Proximity Active for ${monitoredRegions.length} location(s)`);
+    console.log(`📍 Gate Proximity Active for ${monitoredRegions.length} location(s)`);
   } catch (error) {
-    console.error('Failed to start continuous proximity monitoring:', error);
+    console.error('Failed to start proximity monitoring:', error);
   }
 }
 

@@ -52,35 +52,33 @@ export default function DashboardScreen() {
     const monthEnd = `${year}-${month}-31`;
 
     try {
-      const monthly = await db.getFirstAsync<{ total: number }>(
-        'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date >= ? AND date <= ?',
-        [user.uid, monthStart, monthEnd]
-      );
-
-      const todayResult = await db.getFirstAsync<{ total: number }>(
-        'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date = ?',
-        [user.uid, today]
-      );
-
-      const count = await db.getFirstAsync<{ count: number }>(
-        'SELECT COUNT(*) as count FROM expenses WHERE user_id = ? AND date >= ? AND date <= ?',
-        [user.uid, monthStart, monthEnd]
-      );
-
-      const topCat = await db.getFirstAsync<{ name: string; total: number }>(
-        `SELECT c.name, COALESCE(SUM(e.amount), 0) as total 
-         FROM expenses e JOIN categories c ON e.category_id = c.id 
-         WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? 
-         GROUP BY c.id ORDER BY total DESC LIMIT 1`,
-        [user.uid, monthStart, monthEnd]
-      );
-
-      const recent = await db.getAllAsync(
-        `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
-         FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
-         WHERE e.user_id = ? ORDER BY e.date DESC, e.created_at DESC LIMIT 6`,
-        [user.uid]
-      );
+      const [monthly, todayResult, count, topCat, recent] = await Promise.all([
+        db.getFirstAsync<{ total: number }>(
+          'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date >= ? AND date <= ?',
+          [user.uid, monthStart, monthEnd]
+        ),
+        db.getFirstAsync<{ total: number }>(
+          'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date = ?',
+          [user.uid, today]
+        ),
+        db.getFirstAsync<{ count: number }>(
+          'SELECT COUNT(*) as count FROM expenses WHERE user_id = ? AND date >= ? AND date <= ?',
+          [user.uid, monthStart, monthEnd]
+        ),
+        db.getFirstAsync<{ name: string; total: number }>(
+          `SELECT c.name, COALESCE(SUM(e.amount), 0) as total 
+           FROM expenses e JOIN categories c ON e.category_id = c.id 
+           WHERE e.user_id = ? AND e.date >= ? AND e.date <= ? 
+           GROUP BY c.id ORDER BY total DESC LIMIT 1`,
+          [user.uid, monthStart, monthEnd]
+        ),
+        db.getAllAsync(
+          `SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
+           FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+           WHERE e.user_id = ? ORDER BY e.date DESC, e.created_at DESC LIMIT 6`,
+          [user.uid]
+        ),
+      ]);
 
       setStats({
         monthlyTotal: monthly?.total || 0,
@@ -88,7 +86,7 @@ export default function DashboardScreen() {
         transactionCount: count?.count || 0,
         topCategory: topCat?.name || '-',
         topCategoryAmount: topCat?.total || 0,
-        recentExpenses: recent,
+        recentExpenses: recent || [],
       });
     } catch (error) {
       console.error('Failed to load dashboard stats:', error);

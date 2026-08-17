@@ -67,29 +67,30 @@ export default function LocationsScreen() {
     async function syncAndStartGeofences() {
       if (!locations || locations.length === 0) return;
 
-      const regions: GeofenceRegion[] = [];
-      for (const loc of locations) {
-        let assigned = (await getLocationContacts(loc.id)) as Contact[];
-        if (!assigned || assigned.length === 0) {
-          assigned = contacts;
-        }
+      const regions: GeofenceRegion[] = await Promise.all(
+        locations.map(async (loc) => {
+          let assigned = (await getLocationContacts(loc.id)) as Contact[];
+          if (!assigned || assigned.length === 0) {
+            assigned = contacts;
+          }
 
-        regions.push({
-          id: loc.id,
-          name: loc.name,
-          latitude: loc.latitude,
-          longitude: loc.longitude,
-          radius: loc.radius || 10,
-          autoSend: loc.auto_send === 1,
-          messageTemplate: loc.message_template,
-          contacts: assigned.map((c) => ({
-            phone: c.phone,
-            isGroup: c.is_group === 1,
-            name: c.name,
-            contactId: c.id,
-          })),
-        });
-      }
+          return {
+            id: loc.id,
+            name: loc.name,
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            radius: loc.radius || 10,
+            autoSend: loc.auto_send === 1,
+            messageTemplate: loc.message_template,
+            contacts: (assigned || []).map((c) => ({
+              phone: c.phone,
+              isGroup: c.is_group === 1,
+              name: c.name,
+              contactId: c.id,
+            })),
+          };
+        })
+      );
 
       await startGeofencing(regions);
     }

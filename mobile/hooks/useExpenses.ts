@@ -32,10 +32,12 @@ export function useExpenses() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchExpenses = useCallback(async (filters?: ExpenseFilters) => {
+  const fetchExpenses = useCallback(async (filters?: ExpenseFilters, showSpinner = false) => {
     if (!db || !user) return;
 
-    setLoading(true);
+    if (showSpinner || expenses.length === 0) {
+      setLoading(true);
+    }
     try {
       let query = `
         SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
@@ -65,13 +67,13 @@ export function useExpenses() {
       query += ' ORDER BY e.date DESC, e.created_at DESC';
 
       const result = await db.getAllAsync<Expense>(query, params);
-      setExpenses(result);
+      setExpenses(result || []);
     } catch (error) {
       console.error('Failed to fetch expenses:', error);
     } finally {
       setLoading(false);
     }
-  }, [db, user]);
+  }, [db, user, expenses.length]);
 
   const addExpense = useCallback(async (
     categoryId: number,
@@ -85,7 +87,7 @@ export function useExpenses() {
       'INSERT INTO expenses (user_id, category_id, amount, date, note) VALUES (?, ?, ?, ?, ?)',
       [user.uid, categoryId, amount, date, note || null]
     );
-    await fetchExpenses();
+    await fetchExpenses(undefined, false);
   }, [db, user, fetchExpenses]);
 
   const updateExpense = useCallback(async (
@@ -101,7 +103,7 @@ export function useExpenses() {
       'UPDATE expenses SET category_id = ?, amount = ?, date = ?, note = ?, updated_at = unixepoch() WHERE id = ? AND user_id = ?',
       [categoryId, amount, date, note || null, id, user.uid]
     );
-    await fetchExpenses();
+    await fetchExpenses(undefined, false);
   }, [db, user, fetchExpenses]);
 
   const deleteExpense = useCallback(async (id: number) => {
@@ -111,7 +113,7 @@ export function useExpenses() {
       'DELETE FROM expenses WHERE id = ? AND user_id = ?',
       [id, user.uid]
     );
-    await fetchExpenses();
+    await fetchExpenses(undefined, false);
   }, [db, user, fetchExpenses]);
 
   const getMonthlyTotal = useCallback(async (year: number, month: number) => {

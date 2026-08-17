@@ -53,6 +53,7 @@ class AsyncStorageDatabase implements IDatabase {
     },
   };
   private isLoaded = false;
+  private saveTimeout: any = null;
 
   async init(): Promise<void> {
     if (this.isLoaded) return;
@@ -77,10 +78,23 @@ class AsyncStorageDatabase implements IDatabase {
         }
       }
       this.data.categories = uniqueCats;
-      await this.save();
+      this.scheduleSave();
     }
 
     this.isLoaded = true;
+  }
+
+  /**
+   * Fast write-behind persistence engine.
+   * Updates persist in background without blocking the UI thread or entry creation.
+   */
+  private scheduleSave(): void {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    this.saveTimeout = setTimeout(() => {
+      this.save().catch(() => {});
+    }, 40);
   }
 
   private async save(): Promise<void> {
@@ -91,14 +105,23 @@ class AsyncStorageDatabase implements IDatabase {
     }
   }
 
-  private async syncWithCloud(endpoint: string, method: string, body?: any) {
+  private syncWithCloud(endpoint: string, method: string, body?: any) {
     try {
       const baseUrl = whatsappApi.getBaseUrl();
+      if (!baseUrl) return;
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), 2500) : null;
+
       fetch(`${baseUrl}/api/data/${endpoint}`, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
-      }).catch(() => {});
+        signal: controller?.signal,
+      })
+        .catch(() => {})
+        .finally(() => {
+          if (timer) clearTimeout(timer);
+        });
     } catch (e) {}
   }
 
@@ -115,7 +138,7 @@ class AsyncStorageDatabase implements IDatabase {
       const [id, email] = params;
       if (!this.data.users.some((u) => u.id === id)) {
         this.data.users.push({ id, email, created_at: Date.now() });
-        await this.save();
+        this.scheduleSave();
         return { lastInsertRowId: 1, changes: 1 };
       }
       return { lastInsertRowId: 0, changes: 0 };
@@ -141,7 +164,7 @@ class AsyncStorageDatabase implements IDatabase {
         is_default: is_default || 0,
         created_at: Date.now(),
       });
-      await this.save();
+      this.scheduleSave();
       return { lastInsertRowId: id, changes: 1 };
     }
 
@@ -160,7 +183,7 @@ class AsyncStorageDatabase implements IDatabase {
         created_at: Date.now(),
         updated_at: Date.now(),
       });
-      await this.save();
+      this.scheduleSave();
 
       this.syncWithCloud('expenses', 'POST', {
         userId: String(user_id),
@@ -186,7 +209,7 @@ class AsyncStorageDatabase implements IDatabase {
         exp.date = String(date);
         exp.note = note || null;
         exp.updated_at = Date.now();
-        await this.save();
+        this.scheduleSave();
         return { lastInsertRowId: exp.id, changes: 1 };
       }
       return { lastInsertRowId: 0, changes: 0 };
@@ -197,7 +220,7 @@ class AsyncStorageDatabase implements IDatabase {
       const [id] = params;
       const initialLen = this.data.expenses.length;
       this.data.expenses = this.data.expenses.filter((e) => e.id !== Number(id));
-      await this.save();
+      this.scheduleSave();
       return { lastInsertRowId: 0, changes: initialLen - this.data.expenses.length };
     }
 
@@ -216,7 +239,7 @@ class AsyncStorageDatabase implements IDatabase {
         message_template: message_template || 'Reached {location} at {time}.',
         created_at: Date.now(),
       });
-      await this.save();
+      this.scheduleSave();
 
       this.syncWithCloud('locations', 'POST', {
         userId: String(user_id),
@@ -240,7 +263,7 @@ class AsyncStorageDatabase implements IDatabase {
         loc.radius = Number(radius);
         loc.auto_send = Number(auto_send);
         loc.message_template = String(message_template);
-        await this.save();
+        this.scheduleSave();
         return { lastInsertRowId: loc.id, changes: 1 };
       }
       return { lastInsertRowId: 0, changes: 0 };
@@ -252,7 +275,7 @@ class AsyncStorageDatabase implements IDatabase {
       const initialLen = this.data.pinned_locations.length;
       this.data.pinned_locations = this.data.pinned_locations.filter((l) => l.id !== Number(id));
       this.data.location_contacts = this.data.location_contacts.filter((lc) => lc.location_id !== Number(id));
-      await this.save();
+      this.scheduleSave();
       return { lastInsertRowId: 0, changes: initialLen - this.data.pinned_locations.length };
     }
 
@@ -269,7 +292,7 @@ class AsyncStorageDatabase implements IDatabase {
         group_id: group_id || null,
         created_at: Date.now(),
       });
-      await this.save();
+      this.scheduleSave();
 
       this.syncWithCloud('contacts', 'POST', {
         userId: String(user_id),
@@ -291,7 +314,7 @@ class AsyncStorageDatabase implements IDatabase {
         contact.phone = String(phone);
         contact.is_group = is_group ? 1 : 0;
         contact.group_id = group_id || null;
-        await this.save();
+        this.scheduleSave();
         return { lastInsertRowId: contact.id, changes: 1 };
       }
       return { lastInsertRowId: 0, changes: 0 };
@@ -303,7 +326,7 @@ class AsyncStorageDatabase implements IDatabase {
       const initialLen = this.data.contacts.length;
       this.data.contacts = this.data.contacts.filter((c) => c.id !== Number(id));
       this.data.location_contacts = this.data.location_contacts.filter((lc) => lc.contact_id !== Number(id));
-      await this.save();
+      this.scheduleSave();
       return { lastInsertRowId: 0, changes: initialLen - this.data.contacts.length };
     }
 
@@ -316,7 +339,7 @@ class AsyncStorageDatabase implements IDatabase {
           location_id: Number(location_id),
           contact_id: Number(contact_id),
         });
-        await this.save();
+        this.scheduleSave();
       }
       return { lastInsertRowId: 1, changes: 1 };
     }
@@ -328,7 +351,7 @@ class AsyncStorageDatabase implements IDatabase {
         const [contact_id] = params;
         this.data.location_contacts = this.data.location_contacts.filter((lc) => lc.contact_id !== Number(contact_id));
       }
-      await this.save();
+      this.scheduleSave();
       return { lastInsertRowId: 0, changes: 1 };
     }
 
@@ -349,7 +372,7 @@ class AsyncStorageDatabase implements IDatabase {
         error_message: error_message || null,
         sent_at: Math.floor(Date.now() / 1000),
       });
-      await this.save();
+      this.scheduleSave();
       return { lastInsertRowId: id, changes: 1 };
     }
 
@@ -551,6 +574,7 @@ export async function openDatabase(): Promise<IDatabase> {
       const SQLite = require('expo-sqlite');
       const db = await SQLite.openDatabaseAsync('expense_tracker.db');
       await db.execAsync('PRAGMA journal_mode = WAL;');
+      await db.execAsync('PRAGMA synchronous = NORMAL;');
       await db.execAsync('PRAGMA foreign_keys = ON;');
       await initializeSqliteSchema(db);
       return db;
@@ -635,5 +659,14 @@ async function initializeSqliteSchema(db: any): Promise<void> {
       error_message TEXT,
       sent_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+
+    -- High-Performance Composite Query Indexes
+    CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses (user_id, date DESC, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses (category_id);
+    CREATE INDEX IF NOT EXISTS idx_categories_user ON categories (user_id, name);
+    CREATE INDEX IF NOT EXISTS idx_pinned_locations_user ON pinned_locations (user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts (user_id, name ASC);
+    CREATE INDEX IF NOT EXISTS idx_location_contacts_loc ON location_contacts (location_id, contact_id);
+    CREATE INDEX IF NOT EXISTS idx_message_logs_user ON message_logs (user_id, sent_at DESC);
   `);
 }

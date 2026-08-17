@@ -24,9 +24,11 @@ export function useLocations() {
   const [locations, setLocations] = useState<PinnedLocation[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchLocations = useCallback(async () => {
+  const fetchLocations = useCallback(async (showSpinner = false) => {
     if (!db || !user) return;
-    setLoading(true);
+    if (showSpinner || locations.length === 0) {
+      setLoading(true);
+    }
     try {
       const result = await db.getAllAsync<PinnedLocation>(
         `SELECT pl.*, 
@@ -36,13 +38,13 @@ export function useLocations() {
         ORDER BY pl.created_at DESC`,
         [user.uid]
       );
-      setLocations(result);
+      setLocations(result || []);
     } catch (error) {
       console.error('Failed to fetch locations:', error);
     } finally {
       setLoading(false);
     }
-  }, [db, user]);
+  }, [db, user, locations.length]);
 
   const addLocation = useCallback(async (
     name: string,
@@ -56,7 +58,7 @@ export function useLocations() {
       'INSERT INTO pinned_locations (user_id, name, latitude, longitude, radius, message_template) VALUES (?, ?, ?, ?, ?, ?)',
       [user.uid, name, latitude, longitude, radius, messageTemplate]
     );
-    await fetchLocations();
+    await fetchLocations(false);
   }, [db, user, fetchLocations]);
 
   const updateLocation = useCallback(async (
@@ -71,13 +73,13 @@ export function useLocations() {
       'UPDATE pinned_locations SET name = ?, radius = ?, auto_send = ?, message_template = ? WHERE id = ? AND user_id = ?',
       [name, radius, autoSend ? 1 : 0, messageTemplate, id, user.uid]
     );
-    await fetchLocations();
+    await fetchLocations(false);
   }, [db, user, fetchLocations]);
 
   const deleteLocation = useCallback(async (id: number) => {
     if (!db || !user) return;
     await db.runAsync('DELETE FROM pinned_locations WHERE id = ? AND user_id = ?', [id, user.uid]);
-    await fetchLocations();
+    await fetchLocations(false);
   }, [db, user, fetchLocations]);
 
   const assignContact = useCallback(async (locationId: number, contactId: number) => {
@@ -86,7 +88,7 @@ export function useLocations() {
       'INSERT OR IGNORE INTO location_contacts (location_id, contact_id) VALUES (?, ?)',
       [locationId, contactId]
     );
-    await fetchLocations();
+    await fetchLocations(false);
   }, [db, fetchLocations]);
 
   const removeContactFromLocation = useCallback(async (locationId: number, contactId: number) => {
@@ -95,7 +97,7 @@ export function useLocations() {
       'DELETE FROM location_contacts WHERE location_id = ? AND contact_id = ?',
       [locationId, contactId]
     );
-    await fetchLocations();
+    await fetchLocations(false);
   }, [db, fetchLocations]);
 
   const getLocationContacts = useCallback(async (locationId: number) => {

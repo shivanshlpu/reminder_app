@@ -122,6 +122,7 @@ export function MapPickerModal({
   const leafletMapHtml = useMemo(() => {
     const lat = initialLat || 28.6139;
     const lng = initialLng || 77.2090;
+    const rad = radius || 10;
 
     return `
       <!DOCTYPE html>
@@ -129,75 +130,149 @@ export function MapPickerModal({
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; touch-action: manipulation; }
-          html, body, #map { width: 100%; height: 100%; overflow: hidden; background: #E2E8F0; }
-          .pin-popup { font-weight: bold; font-size: 13px; color: #6C63FF; padding: 2px; }
+          html, body { width: 100%; height: 100%; min-height: 100%; overflow: hidden; background: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+          #map { width: 100%; height: 100%; min-height: 100%; position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; }
+          #loading {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: #F8FAFC; z-index: 10; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; color: #475569; font-size: 13px; font-weight: 600;
+          }
+          .spinner {
+            width: 28px; height: 28px; border: 3px solid #E2E8F0; border-top-color: #10B981;
+            border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 8px;
+          }
+          @keyframes spin { to { transform: rotate(360deg); } }
+          .pin-popup { font-weight: 700; font-size: 12px; color: #0F172A; text-align: center; }
+          .leaflet-popup-content-wrapper { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         </style>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
       </head>
       <body>
+        <div id="loading"><div class="spinner"></div>Loading interactive map...</div>
         <div id="map"></div>
         <script>
-          var lat = ${lat};
-          var lng = ${lng};
-          var radius = ${radius};
-
-          var map = L.map('map', {
-            zoomControl: true,
-            tap: true,
-            touchZoom: true
-          }).setView([lat, lng], 17);
-
-          // Fast CartoDB Voyager tiles optimized for mobile retina displays
-          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-            maxZoom: 19,
-            subdomains: 'abcd',
-            attribution: '© OpenStreetMap, © CARTO'
-          }).addTo(map);
-
-          var marker = L.marker([lat, lng], { draggable: true }).addTo(map);
-          marker.bindPopup("<div class='pin-popup'>📍 Pin Location (Drag to move)</div>").openPopup();
-
-          var circle = L.circle([lat, lng], {
-            color: '#6C63FF',
-            fillColor: '#6C63FF',
-            fillOpacity: 0.25,
-            radius: radius
-          }).addTo(map);
-
-          function updateCoords(newLat, newLng) {
-            lat = newLat;
-            lng = newLng;
-            marker.setLatLng([lat, lng]);
-            circle.setLatLng([lat, lng]);
-            window.parent.postMessage({ type: 'PIN_MOVED', lat: lat, lng: lng }, '*');
+          function initMap() {
+            if (typeof L === 'undefined') {
+              // Fallback CDN if CDNJS fails
+              var script = document.createElement('script');
+              script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+              script.onload = runLeaflet;
+              script.onerror = function() {
+                document.getElementById('loading').innerHTML = '⚠️ Map could not be loaded. Please check your internet connection.';
+              };
+              document.head.appendChild(script);
+            } else {
+              runLeaflet();
+            }
           }
 
-          marker.on('dragend', function(e) {
-            var pos = marker.getLatLng();
-            updateCoords(pos.lat, pos.lng);
-          });
+          function runLeaflet() {
+            try {
+              var lat = ${lat};
+              var lng = ${lng};
+              var radius = ${rad};
 
-          map.on('click', function(e) {
-            updateCoords(e.latlng.lat, e.latlng.lng);
-          });
+              var map = L.map('map', {
+                zoomControl: true,
+                tap: true,
+                touchZoom: true,
+                scrollWheelZoom: true
+              }).setView([lat, lng], 17);
 
-          window.addEventListener('message', function(e) {
-            if (e.data && e.data.type === 'SET_CENTER') {
-              lat = e.data.lat;
-              lng = e.data.lng;
-              map.setView([lat, lng], 17);
-              marker.setLatLng([lat, lng]);
-              circle.setLatLng([lat, lng]);
+              // Standard OpenStreetMap Tile Layer with CartoDB fallback
+              var tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+              });
+              tileLayer.on('tileerror', function() {
+                L.tileLayer('https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+              });
+              tileLayer.addTo(map);
+
+              // Custom SVG Marker (no external PNG asset required, prevents 404s inside iframe)
+              var customPinIcon = L.divIcon({
+                className: 'custom-map-pin',
+                html: '<div style="position:relative; width:34px; height:34px; transform:translate(-50%, -100%); cursor:grab;">' +
+                      '<div style="width:34px; height:34px; background:#10B981; border:3px solid #FFFFFF; border-radius:50% 50% 50% 0; transform:rotate(-45deg); box-shadow:0 4px 12px rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center;">' +
+                      '<div style="width:10px; height:10px; background:#FFFFFF; border-radius:50%;"></div>' +
+                      '</div></div>',
+                iconSize: [0, 0],
+                iconAnchor: [0, 0],
+                popupAnchor: [0, -36]
+              });
+
+              var marker = L.marker([lat, lng], { icon: customPinIcon, draggable: true }).addTo(map);
+              marker.bindPopup("<div class='pin-popup'>📍 Selected Pin<br><span style='color:#64748B; font-size:11px; font-weight:normal;'>Drag or tap anywhere to move</span></div>").openPopup();
+
+              var circle = L.circle([lat, lng], {
+                color: '#10B981',
+                fillColor: '#10B981',
+                fillOpacity: 0.2,
+                weight: 2,
+                radius: radius
+              }).addTo(map);
+
+              function updateCoords(newLat, newLng) {
+                lat = parseFloat(newLat.toFixed(6));
+                lng = parseFloat(newLng.toFixed(6));
+                marker.setLatLng([lat, lng]);
+                circle.setLatLng([lat, lng]);
+                try {
+                  window.parent.postMessage({ type: 'PIN_MOVED', lat: lat, lng: lng }, '*');
+                } catch(e) {}
+              }
+
+              marker.on('dragend', function(e) {
+                var pos = marker.getLatLng();
+                updateCoords(pos.lat, pos.lng);
+              });
+
+              map.on('click', function(e) {
+                updateCoords(e.latlng.lat, e.latlng.lng);
+              });
+
+              window.addEventListener('message', function(e) {
+                if (e.data && e.data.type === 'SET_CENTER') {
+                  lat = parseFloat(e.data.lat);
+                  lng = parseFloat(e.data.lng);
+                  map.setView([lat, lng], 17);
+                  marker.setLatLng([lat, lng]);
+                  circle.setLatLng([lat, lng]);
+                  map.invalidateSize();
+                }
+              });
+
+              // Multiple invalidateSize passes to guarantee full tile coverage upon modal animation
+              setTimeout(function() { map.invalidateSize(); }, 60);
+              setTimeout(function() { map.invalidateSize(); }, 200);
+              setTimeout(function() { map.invalidateSize(); }, 500);
+              window.addEventListener('resize', function() { map.invalidateSize(); });
+
+              // Hide loading indicator
+              var loadingEl = document.getElementById('loading');
+              if (loadingEl) loadingEl.style.display = 'none';
+
+              try {
+                window.parent.postMessage({ type: 'MAP_READY' }, '*');
+              } catch(e) {}
+            } catch(err) {
+              console.error('Leaflet initialization error:', err);
             }
-          });
+          }
+
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initMap);
+          } else {
+            initMap();
+          }
         </script>
       </body>
       </html>
     `;
-  }, [visible]);
+  }, [visible, initialLat, initialLng, radius]);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -295,7 +370,7 @@ export function MapPickerModal({
               ref={iframeRef}
               key={`map-iframe-${visible ? 'visible' : 'hidden'}`}
               srcDoc={leafletMapHtml}
-              style={{ width: '100%', height: '100%', border: 'none' }}
+              style={{ width: '100%', height: '100%', minHeight: 320, border: 0 }}
               title="Interactive Pin Point Map"
             />
           ) : (

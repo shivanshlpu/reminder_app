@@ -18,6 +18,9 @@ const DatabaseContext = createContext<DatabaseContextType>({
   isReady: false,
 });
 
+// Track seeded users in memory to prevent repeated startup delays
+const seededUsers = new Set<string>();
+
 export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [db, setDb] = useState<IDatabase | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -29,13 +32,14 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
     async function initDb() {
       try {
         const database = await openDatabase();
+        if (user && !seededUsers.has(user.uid)) {
+          await ensureUserAndCategoriesExist(database, user.uid, user.email || 'user@example.com');
+          seededUsers.add(user.uid);
+        }
+
         if (isMounted) {
           setDb(database);
           setIsReady(true);
-        }
-
-        if (user) {
-          await ensureUserAndCategoriesExist(database, user.uid, user.email || 'user@example.com');
         }
       } catch (error) {
         console.error('Failed to initialize database:', error);
@@ -57,7 +61,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Ensures user exists and seamlessly backfills any missing categories (e.g. Grooming, Online Shopping).
+ * Ensures user exists and seamlessly backfills any missing categories in a single fast pass.
  */
 async function ensureUserAndCategoriesExist(db: IDatabase, userId: string, email: string) {
   try {
@@ -72,14 +76,17 @@ async function ensureUserAndCategoriesExist(db: IDatabase, userId: string, email
     );
 
     const existingNames = new Set((existingCats || []).map((c) => c.name.toLowerCase()));
+    const missingCats = DEFAULT_CATEGORIES.filter((cat) => !existingNames.has(cat.name.toLowerCase()));
 
-    for (const cat of DEFAULT_CATEGORIES) {
-      if (!existingNames.has(cat.name.toLowerCase())) {
-        await db.runAsync(
-          'INSERT INTO categories (user_id, name, icon, color, is_default) VALUES (?, ?, ?, ?, ?)',
-          [userId, cat.name, cat.icon, cat.color, cat.isDefault ? 1 : 0]
-        );
-      }
+    if (missingCats.length > 0) {
+      await Promise.all(
+        missingCats.map((cat) =>
+          db.runAsync(
+            'INSERT INTO categories (user_id, name, icon, color, is_default) VALUES (?, ?, ?, ?, ?)',
+            [userId, cat.name, cat.icon, cat.color, cat.isDefault ? 1 : 0]
+          )
+        )
+      );
     }
   } catch (e) {
     console.error('Failed to seed user or categories', e);
