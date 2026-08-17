@@ -269,7 +269,7 @@ export default function SettingsScreen() {
 
       {/* Preferences & Logs */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Preferences & Updates</Text>
+        <Text style={styles.sectionTitle}>Preferences & History</Text>
 
         <TouchableOpacity style={styles.settingRow} onPress={() => setAutoSendGlobal(!autoSendGlobal)}>
           <View style={styles.settingInfo}>
@@ -280,21 +280,6 @@ export default function SettingsScreen() {
             </View>
           </View>
           <Switch value={autoSendGlobal} onValueChange={setAutoSendGlobal} color={Colors.secondary} />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.settingRow} onPress={handleCheckForUpdates} disabled={checkingUpdate}>
-          <View style={styles.settingInfo}>
-            <MaterialCommunityIcons name="cloud-download-outline" size={22} color={Colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.settingLabel}>Check for App Updates</Text>
-              <Text style={styles.settingDesc}>Download & apply latest features over-the-air</Text>
-            </View>
-          </View>
-          {checkingUpdate ? (
-            <ActivityIndicator size="small" color={Colors.primary} />
-          ) : (
-            <MaterialCommunityIcons name="cellphone-arrow-down" size={20} color={Colors.primary} />
-          )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.settingRow} onPress={() => router.push('/logs')}>
