@@ -1,9 +1,10 @@
 /**
  * Full-Focus Interactive Map Pin-Point Picker
- * Allows clicking/tapping on a live interactive map (OpenStreetMap / Leaflet) to drop a pin,
- * search places, mark as College/Hostel/Home/Cafe, adjust gate radius, and capture precise GPS.
+ * Fast, ultra-responsive Leaflet + CartoDB map for Web, Mobile Web & PWA.
+ * Features stable iframe lifecycle (no re-renders on drag), instant tile loading,
+ * location search, and 1-tap "Use Current GPS Location".
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -51,13 +52,26 @@ export function MapPickerModal({
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
 
+  const iframeRef = useRef<any>(null);
+
   useEffect(() => {
     if (visible) {
-      setSelectedLat(initialLat || 28.6139);
-      setSelectedLng(initialLng || 77.2090);
+      const lat = initialLat || 28.6139;
+      const lng = initialLng || 77.2090;
+      setSelectedLat(lat);
+      setSelectedLng(lng);
       setPlaceLabel(initialName || '');
     }
   }, [visible, initialLat, initialLng, initialName]);
+
+  // Notify map iframe when coordinates are updated via search or GPS
+  const updateMapCenter = (lat: number, lng: number) => {
+    setSelectedLat(lat);
+    setSelectedLng(lng);
+    if (iframeRef.current && iframeRef.current.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type: 'SET_CENTER', lat, lng }, '*');
+    }
+  };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -69,10 +83,9 @@ export function MapPickerModal({
       );
       const data = await res.json();
       if (data && data.length > 0) {
-        const lat = parseFloat(data[0].lat);
-        const lon = parseFloat(data[0].lon);
-        setSelectedLat(parseFloat(lat.toFixed(6)));
-        setSelectedLng(parseFloat(lon.toFixed(6)));
+        const lat = parseFloat(parseFloat(data[0].lat).toFixed(6));
+        const lng = parseFloat(parseFloat(data[0].lon).toFixed(6));
+        updateMapCenter(lat, lng);
         if (!placeLabel) {
           setPlaceLabel(data[0].display_name.split(',')[0]);
         }
@@ -84,78 +97,114 @@ export function MapPickerModal({
     }
   };
 
+  const handleUseCurrentLocation = () => {
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = parseFloat(pos.coords.latitude.toFixed(6));
+          const lng = parseFloat(pos.coords.longitude.toFixed(6));
+          updateMapCenter(lat, lng);
+        },
+        (err) => {
+          alert('Could not access GPS location. Please check browser location permissions.');
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+  };
+
   const handleConfirm = () => {
     onSelectLocation(selectedLat, selectedLng, placeLabel);
     onDismiss();
   };
 
-  // Generate interactive Leaflet Map HTML embed
-  const leafletMapHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-      <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-        #map { width: 100%; height: 100vh; }
-        .pin-popup { font-weight: bold; font-size: 12px; color: #10B981; }
-      </style>
-    </head>
-    <body>
-      <div id="map"></div>
-      <script>
-        var lat = ${selectedLat};
-        var lng = ${selectedLng};
-        var radius = ${radius};
+  // Generate Leaflet Map HTML string statically (only once per modal open)
+  const leafletMapHtml = useMemo(() => {
+    const lat = initialLat || 28.6139;
+    const lng = initialLng || 77.2090;
 
-        var map = L.map('map', { zoomControl: true }).setView([lat, lng], 17);
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; touch-action: manipulation; }
+          html, body, #map { width: 100%; height: 100%; overflow: hidden; background: #E2E8F0; }
+          .pin-popup { font-weight: bold; font-size: 13px; color: #6C63FF; padding: 2px; }
+        </style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script>
+          var lat = ${lat};
+          var lng = ${lng};
+          var radius = ${radius};
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
+          var map = L.map('map', {
+            zoomControl: true,
+            tap: true,
+            touchZoom: true
+          }).setView([lat, lng], 17);
 
-        var marker = L.marker([lat, lng], { draggable: true }).addTo(map);
-        marker.bindPopup("<div class='pin-popup'>📍 Pin Location (Drag to Move)</div>").openPopup();
+          // Fast CartoDB Voyager tiles optimized for mobile retina displays
+          L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19,
+            subdomains: 'abcd',
+            attribution: '© OpenStreetMap, © CARTO'
+          }).addTo(map);
 
-        var circle = L.circle([lat, lng], {
-          color: '#10B981',
-          fillColor: '#10B981',
-          fillOpacity: 0.2,
-          radius: radius
-        }).addTo(map);
+          var marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+          marker.bindPopup("<div class='pin-popup'>📍 Pin Location (Drag to move)</div>").openPopup();
 
-        function updateCoords(newLat, newLng) {
-          lat = newLat;
-          lng = newLng;
-          marker.setLatLng([lat, lng]);
-          circle.setLatLng([lat, lng]);
-          window.parent.postMessage({ type: 'PIN_MOVED', lat: lat, lng: lng }, '*');
-        }
+          var circle = L.circle([lat, lng], {
+            color: '#6C63FF',
+            fillColor: '#6C63FF',
+            fillOpacity: 0.25,
+            radius: radius
+          }).addTo(map);
 
-        marker.on('dragend', function(e) {
-          var position = marker.getLatLng();
-          updateCoords(position.lat, position.lng);
-        });
+          function updateCoords(newLat, newLng) {
+            lat = newLat;
+            lng = newLng;
+            marker.setLatLng([lat, lng]);
+            circle.setLatLng([lat, lng]);
+            window.parent.postMessage({ type: 'PIN_MOVED', lat: lat, lng: lng }, '*');
+          }
 
-        map.on('click', function(e) {
-          updateCoords(e.latlng.lat, e.latlng.lng);
-        });
-      </script>
-    </body>
-    </html>
-  `;
+          marker.on('dragend', function(e) {
+            var pos = marker.getLatLng();
+            updateCoords(pos.lat, pos.lng);
+          });
+
+          map.on('click', function(e) {
+            updateCoords(e.latlng.lat, e.latlng.lng);
+          });
+
+          window.addEventListener('message', function(e) {
+            if (e.data && e.data.type === 'SET_CENTER') {
+              lat = e.data.lat;
+              lng = e.data.lng;
+              map.setView([lat, lng], 17);
+              marker.setLatLng([lat, lng]);
+              circle.setLatLng([lat, lng]);
+            }
+          });
+        </script>
+      </body>
+      </html>
+    `;
+  }, [visible]);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const handleMessage = (event: MessageEvent) => {
         if (event.data && event.data.type === 'PIN_MOVED') {
-          setSelectedLat(parseFloat(event.data.lat.toFixed(6)));
-          setSelectedLng(parseFloat(event.data.lng.toFixed(6)));
+          setSelectedLat(parseFloat(parseFloat(event.data.lat).toFixed(6)));
+          setSelectedLng(parseFloat(parseFloat(event.data.lng).toFixed(6)));
         }
       };
       window.addEventListener('message', handleMessage);
@@ -172,9 +221,9 @@ export function MapPickerModal({
             <View style={styles.iconCircle}>
               <MaterialCommunityIcons name="map-marker-radius" size={24} color={Colors.secondary} />
             </View>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.modalTitle}>Mark Pin Point on Map</Text>
-              <Text style={styles.subtitle}>Click or drag pin to mark your Hotel, Hostel, College gate, or Room</Text>
+              <Text style={styles.subtitle}>Tap or drag pin to mark your Hostel, Gate, or Campus</Text>
             </View>
           </View>
           <TouchableOpacity onPress={onDismiss} style={styles.closeBtn}>
@@ -204,7 +253,7 @@ export function MapPickerModal({
           </ScrollView>
         </View>
 
-        {/* Search Bar & Location Name */}
+        {/* Search Bar & My Location Button */}
         <View style={styles.topControlRow}>
           <TextInput
             placeholder="Search landmark, campus, area..."
@@ -228,15 +277,23 @@ export function MapPickerModal({
             loading={isSearching}
             style={styles.searchBtn}
           >
-            Find
+            Search
           </Button>
+          <TouchableOpacity
+            style={styles.gpsBtn}
+            onPress={handleUseCurrentLocation}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons name="crosshairs-gps" size={18} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
 
         {/* Live Interactive Map Canvas */}
         <View style={styles.mapCanvas}>
           {Platform.OS === 'web' ? (
             <iframe
-              key={`${selectedLat}-${selectedLng}-${visible}`}
+              ref={iframeRef}
+              key={`map-iframe-${visible ? 'visible' : 'hidden'}`}
               srcDoc={leafletMapHtml}
               style={{ width: '100%', height: '100%', border: 'none' }}
               title="Interactive Pin Point Map"
@@ -256,7 +313,7 @@ export function MapPickerModal({
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>LOCATION NAME</Text>
             <Text style={styles.infoValue} numberOfLines={1}>
-              {placeLabel ? `📍 ${placeLabel}` : 'Tap a tag above or type in form'}
+              {placeLabel ? `📍 ${placeLabel}` : 'Tap a tag above'}
             </Text>
           </View>
           <View style={styles.infoDivider} />
@@ -267,7 +324,7 @@ export function MapPickerModal({
           <View style={styles.infoDivider} />
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>GATE RADIUS</Text>
-            <Text style={[styles.infoValue, { color: Colors.secondary }]}>{radius}m Precision</Text>
+            <Text style={[styles.infoValue, { color: Colors.secondary }]}>{radius}m Radius</Text>
           </View>
         </View>
 
@@ -296,35 +353,44 @@ export function MapPickerModal({
 const styles = StyleSheet.create({
   modal: {
     backgroundColor: Colors.surface,
-    margin: Spacing.md,
+    margin: Spacing.sm,
     maxWidth: 820,
-    width: '94%',
+    width: '95%',
     alignSelf: 'center',
     borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
+    padding: Spacing.md,
+    maxHeight: '92%',
     ...Shadows.large,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm },
-  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, flex: 1 },
-  iconCircle: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.secondaryBg, justifyContent: 'center', alignItems: 'center' },
-  modalTitle: { fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.text },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xs },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, flex: 1 },
+  iconCircle: { width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.secondaryBg, justifyContent: 'center', alignItems: 'center' },
+  modalTitle: { fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.text },
   subtitle: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary },
   closeBtn: { padding: 4 },
-  tagsContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: Spacing.xs, gap: Spacing.xs },
+  tagsContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 4, gap: Spacing.xs },
   tagsHeading: { fontSize: 11, fontWeight: '700', color: Colors.textMuted },
   tagsScroll: { flexDirection: 'row' },
   placeChip: { marginRight: Spacing.xs, backgroundColor: Colors.background },
-  topControlRow: { flexDirection: 'row', gap: Spacing.sm, marginVertical: Spacing.xs },
-  searchInput: { flex: 1, backgroundColor: Colors.surface },
-  searchBtn: { justifyContent: 'center', borderRadius: BorderRadius.md },
+  topControlRow: { flexDirection: 'row', gap: Spacing.xs, marginVertical: 4, alignItems: 'center' },
+  searchInput: { flex: 1, backgroundColor: Colors.surface, height: 40 },
+  searchBtn: { justifyContent: 'center', borderRadius: BorderRadius.md, height: 40 },
+  gpsBtn: {
+    width: 40,
+    height: 40,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   mapCanvas: {
-    height: 360,
+    height: 320,
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
     borderWidth: 1.5,
     borderColor: Colors.border,
-    marginVertical: Spacing.sm,
-    backgroundColor: '#F8FAFC',
+    marginVertical: Spacing.xs,
+    backgroundColor: '#E2E8F0',
   },
   mobileFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.lg },
   coordDisplay: { fontSize: Fonts.sizes.sm, fontWeight: '700', color: Colors.text, marginTop: Spacing.sm },
@@ -332,15 +398,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: Colors.background,
     borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginVertical: Spacing.xs,
+    padding: Spacing.sm,
+    marginVertical: 4,
     borderWidth: 1,
     borderColor: Colors.border,
   },
   infoItem: { flex: 1, alignItems: 'center' },
   infoLabel: { fontSize: 9, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.5 },
-  infoValue: { fontSize: Fonts.sizes.sm, fontWeight: '800', color: Colors.text, marginTop: 2 },
+  infoValue: { fontSize: Fonts.sizes.xs, fontWeight: '800', color: Colors.text, marginTop: 2 },
   infoDivider: { width: 1, height: '100%', backgroundColor: Colors.border },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.md, marginTop: Spacing.sm },
+  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.sm, marginTop: Spacing.xs },
   btn: { borderRadius: BorderRadius.md },
 });
