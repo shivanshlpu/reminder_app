@@ -60,6 +60,14 @@
         }
       ]
     ],
+    "updates": {
+      "url": "https://u.expo.dev/e52dca9a-1599-473e-abe3-ce610b65be92",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "extra": {
       "router": {},
       "eas": {

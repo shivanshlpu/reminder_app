@@ -11,7 +11,8 @@ import { DatabaseProvider } from '../contexts/DatabaseContext';
 import { ToastProvider } from '../contexts/ToastContext';
 import { ResponsiveContainer } from '../components/ResponsiveContainer';
 import { Colors } from '../constants/theme';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Alert, Platform } from 'react-native';
+import * as Updates from 'expo-updates';
 
 const customTheme = {
   ...MD3LightTheme,
@@ -34,6 +35,34 @@ function RootLayoutNav() {
   const { user, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  useEffect(() => {
+    async function checkForOtaUpdates() {
+      if (Platform.OS === 'web' || __DEV__) return;
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          Alert.alert(
+            'New Update Available 🎉',
+            'An in-app update has been downloaded. Would you like to restart the app to apply the latest features now?',
+            [
+              { text: 'Later', style: 'cancel' },
+              {
+                text: 'Restart Now',
+                onPress: async () => {
+                  await Updates.reloadAsync();
+                },
+              },
+            ]
+          );
+        }
+      } catch (e) {
+        // Quietly ignore if offline
+      }
+    }
+    checkForOtaUpdates();
+  }, []);
 
   useEffect(() => {
     if (loading) return;

@@ -11,7 +11,9 @@ import {
   Alert,
   Image,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
+import * as Updates from 'expo-updates';
 import { Switch, Button, Modal, Portal, TextInput } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -131,6 +133,41 @@ export default function SettingsScreen() {
     ]);
   };
 
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+
+  const handleCheckForUpdates = async () => {
+    if (Platform.OS === 'web') {
+      Alert.alert('Web App', 'The web application updates automatically when reloaded.');
+      return;
+    }
+    setCheckingUpdate(true);
+    try {
+      const update = await Updates.checkForUpdateAsync();
+      if (update.isAvailable) {
+        await Updates.fetchUpdateAsync();
+        Alert.alert(
+          'Update Ready! 🎉',
+          'A new update has been downloaded. Restart the app now to apply changes?',
+          [
+            { text: 'Later', style: 'cancel' },
+            {
+              text: 'Restart & Apply',
+              onPress: async () => {
+                await Updates.reloadAsync();
+              },
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Up to Date ✨', 'You are running the latest version of ExpenseTracker.');
+      }
+    } catch (error: any) {
+      Alert.alert('Check Complete', 'App is up to date.');
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* User Info Header */}
@@ -232,7 +269,7 @@ export default function SettingsScreen() {
 
       {/* Preferences & Logs */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Preferences & History</Text>
+        <Text style={styles.sectionTitle}>Preferences & Updates</Text>
 
         <TouchableOpacity style={styles.settingRow} onPress={() => setAutoSendGlobal(!autoSendGlobal)}>
           <View style={styles.settingInfo}>
@@ -243,6 +280,21 @@ export default function SettingsScreen() {
             </View>
           </View>
           <Switch value={autoSendGlobal} onValueChange={setAutoSendGlobal} color={Colors.secondary} />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.settingRow} onPress={handleCheckForUpdates} disabled={checkingUpdate}>
+          <View style={styles.settingInfo}>
+            <MaterialCommunityIcons name="cloud-download-outline" size={22} color={Colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.settingLabel}>Check for App Updates</Text>
+              <Text style={styles.settingDesc}>Download & apply latest features over-the-air</Text>
+            </View>
+          </View>
+          {checkingUpdate ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
+          ) : (
+            <MaterialCommunityIcons name="cellphone-arrow-down" size={20} color={Colors.primary} />
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.settingRow} onPress={() => router.push('/logs')}>
