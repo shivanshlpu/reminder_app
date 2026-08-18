@@ -37,7 +37,8 @@ function RootLayoutNav() {
   const router = useRouter();
 
   useEffect(() => {
-    async function checkForOtaUpdates() {
+    // Run OTA update check after app is fully mounted and rendered
+    const timer = setTimeout(async () => {
       if (Platform.OS === 'web' || __DEV__) return;
       try {
         const update = await Updates.checkForUpdateAsync();
@@ -60,8 +61,9 @@ function RootLayoutNav() {
       } catch (e) {
         // Quietly ignore if offline
       }
-    }
-    checkForOtaUpdates();
+    }, 3000);
+
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {

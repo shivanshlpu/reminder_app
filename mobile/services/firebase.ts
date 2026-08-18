@@ -18,7 +18,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Firebase configuration
-// Replace these with your Firebase project config
+// Replace these with your Firebase project config if you want remote Firebase Auth
 const firebaseConfig = {
   apiKey: 'YOUR_API_KEY',
   authDomain: 'YOUR_AUTH_DOMAIN',
@@ -28,18 +28,30 @@ const firebaseConfig = {
   appId: 'YOUR_APP_ID',
 };
 
-// Initialize Firebase (only once)
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+export function isFirebaseConfigured(): boolean {
+  return (
+    !!firebaseConfig.apiKey &&
+    firebaseConfig.apiKey !== 'YOUR_API_KEY' &&
+    firebaseConfig.apiKey.length > 10
+  );
+}
 
-// Initialize Auth with AsyncStorage persistence for React Native
-let auth: ReturnType<typeof getAuth>;
-try {
-  auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
-} catch (e) {
-  // If already initialized (e.g., hot reload), get existing instance
-  auth = getAuth(app);
+// Lazy/Conditional Firebase initialization to eliminate startup network timeouts
+let auth: ReturnType<typeof getAuth> | null = null;
+
+if (isFirebaseConfigured()) {
+  try {
+    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    try {
+      auth = initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage),
+      });
+    } catch (e) {
+      auth = getAuth(app);
+    }
+  } catch (e) {
+    console.warn('Firebase initialization skipped:', e);
+  }
 }
 
 export { auth };
@@ -48,6 +60,7 @@ export { auth };
  * Register a new user with email and password.
  */
 export async function registerUser(email: string, password: string) {
+  if (!auth) throw new Error('Firebase Auth is not configured');
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
   return userCredential.user;
 }
@@ -56,6 +69,7 @@ export async function registerUser(email: string, password: string) {
  * Sign in an existing user with email and password.
  */
 export async function loginUser(email: string, password: string) {
+  if (!auth) throw new Error('Firebase Auth is not configured');
   const userCredential = await signInWithEmailAndPassword(auth, email, password);
   return userCredential.user;
 }
@@ -64,6 +78,7 @@ export async function loginUser(email: string, password: string) {
  * Sign out the current user.
  */
 export async function logoutUser() {
+  if (!auth) return;
   await signOut(auth);
 }
 
@@ -71,6 +86,7 @@ export async function logoutUser() {
  * Subscribe to auth state changes.
  */
 export function subscribeToAuthChanges(callback: (user: User | null) => void) {
+  if (!auth) return () => {};
   return onAuthStateChanged(auth, callback);
 }
 
