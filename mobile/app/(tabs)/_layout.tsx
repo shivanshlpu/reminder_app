@@ -73,6 +73,16 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="loans"
+        options={{
+          title: 'Loans / Udhaar',
+          headerTitle: 'Loan & Debt Manager',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="hand-coin-outline" size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="locations"
         options={{
           title: 'Locations',

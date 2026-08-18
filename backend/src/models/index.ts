@@ -134,3 +134,36 @@ const MessageLogSchema = new Schema<IMessageLog>({
   sentAt: { type: Date, default: Date.now },
 });
 export const MessageLogModel = mongoose.model<IMessageLog>('MessageLog', MessageLogSchema);
+
+// Loan & Debt Schema (Khata / Udhaar)
+export interface ILoan extends Document {
+  userId: string;
+  personName: string;
+  personPhone: string;
+  type: 'lent' | 'borrowed'; // 'lent' = I gave loan (to receive), 'borrowed' = I took loan (I owe)
+  amount: number;
+  amountRepaid: number;
+  date: string;
+  dueDate?: string;
+  note?: string;
+  status: 'pending' | 'partially_paid' | 'settled';
+  autoNotify: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+const LoanSchema = new Schema<ILoan>({
+  userId: { type: String, required: true, index: true },
+  personName: { type: String, required: true },
+  personPhone: { type: String, required: true },
+  type: { type: String, enum: ['lent', 'borrowed'], required: true, index: true },
+  amount: { type: Number, required: true },
+  amountRepaid: { type: Number, default: 0 },
+  date: { type: String, required: true, index: true },
+  dueDate: { type: String },
+  note: { type: String },
+  status: { type: String, enum: ['pending', 'partially_paid', 'settled'], default: 'pending', index: true },
+  autoNotify: { type: Boolean, default: true },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+export const LoanModel = mongoose.model<ILoan>('Loan', LoanSchema);

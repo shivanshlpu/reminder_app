@@ -10,6 +10,7 @@ import {
   PinnedLocationModel,
   ContactModel,
   MessageLogModel,
+  LoanModel,
 } from '../models';
 import logger from '../utils/logger';
 
@@ -166,6 +167,77 @@ router.delete('/contacts/:id', async (req: Request, res: Response) => {
   try {
     await ContactModel.findByIdAndDelete(req.params.id);
     res.json({ success: true, data: { message: 'Contact deleted' } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==================== LOANS & DEBTS ====================
+
+// GET /api/data/loans?userId=...
+router.get('/loans', async (req: Request, res: Response) => {
+  try {
+    const { userId, type, status } = req.query;
+    if (!userId) {
+      res.status(400).json({ success: false, error: 'userId is required' });
+      return;
+    }
+    const query: any = { userId: String(userId) };
+    if (type) query.type = String(type);
+    if (status) query.status = String(status);
+
+    const loans = await LoanModel.find(query).sort({ date: -1, createdAt: -1 });
+    res.json({ success: true, data: loans });
+  } catch (error: any) {
+    logger.error({ error }, 'Failed to fetch loans from MongoDB');
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/data/loans
+router.post('/loans', async (req: Request, res: Response) => {
+  try {
+    const { userId, personName, personPhone, type, amount, amountRepaid, date, dueDate, note, status, autoNotify } = req.body;
+    const loan = new LoanModel({
+      userId: String(userId),
+      personName: String(personName),
+      personPhone: String(personPhone),
+      type: type || 'lent',
+      amount: Number(amount),
+      amountRepaid: Number(amountRepaid) || 0,
+      date: String(date),
+      dueDate: dueDate || null,
+      note: note || null,
+      status: status || 'pending',
+      autoNotify: autoNotify !== undefined ? Boolean(autoNotify) : true,
+    });
+    await loan.save();
+    res.json({ success: true, data: loan });
+  } catch (error: any) {
+    logger.error({ error }, 'Failed to create loan in MongoDB');
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PUT /api/data/loans/:id
+router.put('/loans/:id', async (req: Request, res: Response) => {
+  try {
+    const updated = await LoanModel.findByIdAndUpdate(
+      req.params.id,
+      { ...req.body, updatedAt: new Date() },
+      { new: true }
+    );
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/data/loans/:id
+router.delete('/loans/:id', async (req: Request, res: Response) => {
+  try {
+    await LoanModel.findByIdAndDelete(req.params.id);
+    res.json({ success: true, data: { message: 'Loan record deleted' } });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }

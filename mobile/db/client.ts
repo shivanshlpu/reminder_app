@@ -24,6 +24,7 @@ interface LocalStorageDBData {
   contacts: Array<{ id: number; user_id: string; name: string; phone: string; is_group: number; group_id: string | null; created_at: number }>;
   location_contacts: Array<{ id: number; location_id: number; contact_id: number }>;
   message_logs: Array<{ id: number; user_id: string; location_id: number | null; contact_id: number | null; location_name: string; recipient_name: string; recipient_phone: string; message_content: string; status: string; error_message: string | null; sent_at: number }>;
+  loans: Array<{ id: number; user_id: string; person_name: string; person_phone: string; type: 'lent' | 'borrowed'; amount: number; amount_repaid: number; date: string; due_date: string | null; note: string | null; status: 'pending' | 'partially_paid' | 'settled'; auto_notify: number; created_at: number; updated_at: number }>;
   autoIncrement: {
     categories: number;
     expenses: number;
@@ -31,6 +32,7 @@ interface LocalStorageDBData {
     contacts: number;
     location_contacts: number;
     message_logs: number;
+    loans: number;
   };
 }
 
@@ -43,6 +45,7 @@ class AsyncStorageDatabase implements IDatabase {
     contacts: [],
     location_contacts: [],
     message_logs: [],
+    loans: [],
     autoIncrement: {
       categories: 1,
       expenses: 1,
@@ -50,6 +53,7 @@ class AsyncStorageDatabase implements IDatabase {
       contacts: 1,
       location_contacts: 1,
       message_logs: 1,
+      loans: 1,
     },
   };
   private isLoaded = false;
@@ -376,6 +380,94 @@ class AsyncStorageDatabase implements IDatabase {
       return { lastInsertRowId: id, changes: 1 };
     }
 
+    // 14. INSERT INTO loans
+    if (/^INSERT\s+INTO\s+loans/i.test(cleanSql)) {
+      const [user_id, person_name, person_phone, type, amount, amount_repaid, date, due_date, note, status, auto_notify] = params;
+      if (!this.data.loans) this.data.loans = [];
+      if (!this.data.autoIncrement.loans) this.data.autoIncrement.loans = 1;
+
+      const id = this.data.autoIncrement.loans++;
+      this.data.loans.push({
+        id,
+        user_id: String(user_id),
+        person_name: String(person_name),
+        person_phone: String(person_phone),
+        type: type || 'lent',
+        amount: Number(amount),
+        amount_repaid: Number(amount_repaid) || 0,
+        date: String(date),
+        due_date: due_date || null,
+        note: note || null,
+        status: status || 'pending',
+        auto_notify: auto_notify !== undefined ? Number(auto_notify) : 1,
+        created_at: Math.floor(Date.now() / 1000),
+        updated_at: Math.floor(Date.now() / 1000),
+      });
+      this.scheduleSave();
+
+      this.syncWithCloud('loans', 'POST', {
+        userId: String(user_id),
+        personName: String(person_name),
+        personPhone: String(person_phone),
+        type: type || 'lent',
+        amount: Number(amount),
+        amountRepaid: Number(amount_repaid) || 0,
+        date: String(date),
+        dueDate: due_date || null,
+        note: note || null,
+        status: status || 'pending',
+        autoNotify: auto_notify !== 0,
+      });
+
+      return { lastInsertRowId: id, changes: 1 };
+    }
+
+    // 15. UPDATE loans
+    if (/^UPDATE\s+loans/i.test(cleanSql)) {
+      if (!this.data.loans) this.data.loans = [];
+
+      // Check if it's a full update or partial repayment update
+      if (/SET\s+amount_repaid\s*=\s*\?,\s*status\s*=\s*\?/i.test(cleanSql)) {
+        const [amount_repaid, status, id, user_id] = params;
+        const loan = this.data.loans.find((l) => l.id === Number(id) && (!user_id || l.user_id === String(user_id)));
+        if (loan) {
+          loan.amount_repaid = Number(amount_repaid);
+          loan.status = status;
+          loan.updated_at = Math.floor(Date.now() / 1000);
+          this.scheduleSave();
+          return { lastInsertRowId: loan.id, changes: 1 };
+        }
+      } else {
+        const [person_name, person_phone, type, amount, amount_repaid, date, due_date, note, status, id, user_id] = params;
+        const loan = this.data.loans.find((l) => l.id === Number(id) && (!user_id || l.user_id === String(user_id)));
+        if (loan) {
+          loan.person_name = String(person_name);
+          loan.person_phone = String(person_phone);
+          loan.type = type || loan.type;
+          loan.amount = Number(amount);
+          loan.amount_repaid = Number(amount_repaid) || 0;
+          loan.date = String(date);
+          loan.due_date = due_date || null;
+          loan.note = note || null;
+          loan.status = status || loan.status;
+          loan.updated_at = Math.floor(Date.now() / 1000);
+          this.scheduleSave();
+          return { lastInsertRowId: loan.id, changes: 1 };
+        }
+      }
+      return { lastInsertRowId: 0, changes: 0 };
+    }
+
+    // 16. DELETE FROM loans
+    if (/^DELETE\s+FROM\s+loans/i.test(cleanSql)) {
+      if (!this.data.loans) this.data.loans = [];
+      const [id, user_id] = params;
+      const initialLen = this.data.loans.length;
+      this.data.loans = this.data.loans.filter((l) => !(l.id === Number(id) && (!user_id || l.user_id === String(user_id))));
+      this.scheduleSave();
+      return { lastInsertRowId: 0, changes: initialLen - this.data.loans.length };
+    }
+
     return { lastInsertRowId: 0, changes: 0 };
   }
 
@@ -555,10 +647,28 @@ class AsyncStorageDatabase implements IDatabase {
     // Message logs query
     if (/FROM\s+message_logs/i.test(cleanSql)) {
       const [user_id] = params;
-      const logs = this.data.message_logs
+      const logs = (this.data.message_logs || [])
         .filter((l) => !user_id || l.user_id === user_id)
         .sort((a, b) => b.sent_at - a.sent_at);
       return logs as unknown as T[];
+    }
+
+    // Loans query
+    if (/FROM\s+loans/i.test(cleanSql)) {
+      const [user_id, ...rest] = params;
+      let loans = (this.data.loans || []).filter((l) => !user_id || l.user_id === user_id);
+
+      if (/type\s*=\s*\?/i.test(cleanSql) && rest.length > 0) {
+        const typeParam = rest[0];
+        loans = loans.filter((l) => l.type === typeParam);
+      }
+      if (/status\s*=\s*\?/i.test(cleanSql) && rest.length > 1) {
+        const statusParam = rest[1];
+        loans = loans.filter((l) => l.status === statusParam);
+      }
+
+      loans.sort((a, b) => (b.date > a.date ? 1 : b.date < a.date ? -1 : b.created_at - a.created_at));
+      return loans as unknown as T[];
     }
 
     return [];
@@ -660,6 +770,23 @@ async function initializeSqliteSchema(db: any): Promise<void> {
       sent_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
+    CREATE TABLE IF NOT EXISTS loans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      person_name TEXT NOT NULL,
+      person_phone TEXT NOT NULL,
+      type TEXT NOT NULL, -- 'lent' | 'borrowed'
+      amount REAL NOT NULL,
+      amount_repaid REAL DEFAULT 0,
+      date TEXT NOT NULL,
+      due_date TEXT,
+      note TEXT,
+      status TEXT DEFAULT 'pending', -- 'pending' | 'partially_paid' | 'settled'
+      auto_notify INTEGER DEFAULT 1,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
     -- High-Performance Composite Query Indexes
     CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses (user_id, date DESC, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_expenses_category ON expenses (category_id);
@@ -668,5 +795,7 @@ async function initializeSqliteSchema(db: any): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_contacts_user ON contacts (user_id, name ASC);
     CREATE INDEX IF NOT EXISTS idx_location_contacts_loc ON location_contacts (location_id, contact_id);
     CREATE INDEX IF NOT EXISTS idx_message_logs_user ON message_logs (user_id, sent_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_loans_user_type ON loans (user_id, type, status);
+    CREATE INDEX IF NOT EXISTS idx_loans_user_date ON loans (user_id, date DESC);
   `);
 }
