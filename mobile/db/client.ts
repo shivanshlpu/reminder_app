@@ -515,7 +515,11 @@ class AsyncStorageDatabase implements IDatabase {
     if (/SELECT\s+COALESCE\(SUM\(amount\),\s*0\)\s+as\s+total\s+FROM\s+expenses\s+WHERE\s+user_id\s*=\s*\?\s+AND\s+date\s*>=\s*\?\s+AND\s+date\s*<=\s*\?/i.test(cleanSql)) {
       const [user_id, start, end] = params;
       const total = this.data.expenses
-        .filter((e) => (!user_id || e.user_id === user_id) && e.date >= start && e.date <= end)
+        .filter((e) => {
+          if (user_id && e.user_id !== user_id) return false;
+          const d = (e.date || '').split('T')[0];
+          return d >= start && d <= end;
+        })
         .reduce((sum, e) => sum + e.amount, 0);
       return [{ total } as unknown as T];
     }
@@ -524,7 +528,11 @@ class AsyncStorageDatabase implements IDatabase {
     if (/SELECT\s+COALESCE\(SUM\(amount\),\s*0\)\s+as\s+total\s+FROM\s+expenses\s+WHERE\s+user_id\s*=\s*\?\s+AND\s+date\s*=\s*\?/i.test(cleanSql)) {
       const [user_id, today] = params;
       const total = this.data.expenses
-        .filter((e) => (!user_id || e.user_id === user_id) && e.date === today)
+        .filter((e) => {
+          if (user_id && e.user_id !== user_id) return false;
+          const d = (e.date || '').split('T')[0];
+          return d === today;
+        })
         .reduce((sum, e) => sum + e.amount, 0);
       return [{ total } as unknown as T];
     }
@@ -532,14 +540,22 @@ class AsyncStorageDatabase implements IDatabase {
     // Monthly count
     if (/SELECT\s+COUNT\(\*\)\s+as\s+count\s+FROM\s+expenses\s+WHERE\s+user_id\s*=\s*\?\s+AND\s+date\s*>=\s*\?\s+AND\s+date\s*<=\s*\?/i.test(cleanSql)) {
       const [user_id, start, end] = params;
-      const count = this.data.expenses.filter((e) => (!user_id || e.user_id === user_id) && e.date >= start && e.date <= end).length;
+      const count = this.data.expenses.filter((e) => {
+        if (user_id && e.user_id !== user_id) return false;
+        const d = (e.date || '').split('T')[0];
+        return d >= start && d <= end;
+      }).length;
       return [{ count } as unknown as T];
     }
 
     // Top category
     if (/SELECT\s+c\.name,\s*COALESCE\(SUM\(e\.amount\),\s*0\)\s+as\s+total/i.test(cleanSql)) {
       const [user_id, start, end] = params;
-      const filtered = this.data.expenses.filter((e) => (!user_id || e.user_id === user_id) && e.date >= start && e.date <= end);
+      const filtered = this.data.expenses.filter((e) => {
+        if (user_id && e.user_id !== user_id) return false;
+        const d = (e.date || '').split('T')[0];
+        return d >= start && d <= end;
+      });
       const catTotals: Record<number, number> = {};
       filtered.forEach((e) => {
         catTotals[e.category_id] = (catTotals[e.category_id] || 0) + e.amount;

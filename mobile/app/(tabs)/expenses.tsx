@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { FAB, Modal, Portal, TextInput, Button, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useExpenses, Expense } from '../../hooks/useExpenses';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -71,11 +71,15 @@ export default function ExpensesScreen() {
     }
   }, [db, user]);
 
-  useEffect(() => {
-    if (isReady) {
-      loadCategories();
-    }
-  }, [isReady, loadCategories]);
+  // Re-fetch on focus whenever switching to the Expenses tab
+  useFocusEffect(
+    useCallback(() => {
+      if (isReady) {
+        loadCategories();
+        fetchExpenses({ categoryId: filterCategory, searchText }, false);
+      }
+    }, [isReady, loadCategories, fetchExpenses, filterCategory, searchText])
+  );
 
   const openAddModal = async () => {
     await loadCategories();

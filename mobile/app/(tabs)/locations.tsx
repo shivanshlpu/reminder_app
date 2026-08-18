@@ -5,7 +5,7 @@
  * - Per-Contact Custom Message Assignment & 10m Gate Geofencing
  * - In-App Floating Toast Notifications for all actions
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { FAB, Modal, Portal, TextInput, Button, Switch, Checkbox, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -71,9 +72,14 @@ export default function LocationsScreen() {
   const [gettingLocation, setGettingLocation] = useState(false);
   const [sendingAlertId, setSendingAlertId] = useState<number | null>(null);
 
-  useEffect(() => {
-    loadDailyTriggers().then((map) => setDailyTriggerMap({ ...map }));
-  }, []);
+  // Re-fetch automatically on tab focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchLocations(false);
+      fetchContacts(false);
+      loadDailyTriggers().then((map) => setDailyTriggerMap({ ...map }));
+    }, [fetchLocations, fetchContacts])
+  );
 
   useEffect(() => {
     async function syncAndStartGeofences() {

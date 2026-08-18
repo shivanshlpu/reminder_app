@@ -3,7 +3,7 @@
  * Dual-sided tracking: Money Lent (To Receive) vs Money Borrowed (You Owe)
  * Automated professional WhatsApp notifications & follow-up reminders!
  */
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import {
   ProgressBar,
   Switch,
 } from 'react-native-paper';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLoans, Loan } from '../../hooks/useLoans';
 import { useContacts } from '../../hooks/useContacts';
@@ -55,6 +56,13 @@ export default function LoansScreen() {
   const [filterTab, setFilterTab] = useState<FilterTab>('lent');
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+
+  // Re-fetch automatically on tab focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchLoans(false);
+    }, [fetchLoans])
+  );
 
   // Add/Edit Modal
   const [showAddModal, setShowAddModal] = useState(false);

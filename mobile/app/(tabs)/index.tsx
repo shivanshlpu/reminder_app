@@ -10,11 +10,12 @@ import {
   RefreshControl,
   TouchableOpacity,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
+import { showMessage } from '../../utils/dialogs';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
 interface DashboardStats {
@@ -49,7 +50,8 @@ export default function DashboardScreen() {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const today = `${year}-${month}-${String(now.getDate()).padStart(2, '0')}`;
     const monthStart = `${year}-${month}-01`;
-    const monthEnd = `${year}-${month}-31`;
+    const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
+    const monthEnd = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
 
     try {
       const [monthly, todayResult, count, topCat, recent] = await Promise.all([
@@ -93,11 +95,14 @@ export default function DashboardScreen() {
     }
   }, [db, user]);
 
-  useEffect(() => {
-    if (isReady) {
-      loadStats();
-    }
-  }, [isReady, loadStats]);
+  // Re-fetch automatically whenever the Dashboard tab is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (isReady) {
+        loadStats();
+      }
+    }, [isReady, loadStats])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -127,12 +132,26 @@ export default function DashboardScreen() {
           <Text style={styles.greeting}>Welcome back,</Text>
           <Text style={styles.userName}>{user?.email?.split('@')[0] || 'User'}</Text>
         </View>
-        <TouchableOpacity
-          onPress={() => router.push('/logs')}
-          style={styles.notifButton}
-        >
-          <MaterialCommunityIcons name="bell-outline" size={22} color={Colors.textSecondary} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={onRefresh}
+            style={styles.headerBtn}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name={refreshing ? 'loading' : 'refresh'}
+              size={22}
+              color={refreshing ? Colors.primary : Colors.textSecondary}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push('/logs')}
+            style={styles.headerBtn}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons name="bell-outline" size={22} color={Colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Overview Grid (Side by side on Laptop, stacked on Mobile) */}
@@ -263,7 +282,12 @@ const styles = StyleSheet.create({
     color: Colors.text,
     letterSpacing: -0.5,
   },
-  notifButton: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  headerBtn: {
     width: 42,
     height: 42,
     borderRadius: 21,

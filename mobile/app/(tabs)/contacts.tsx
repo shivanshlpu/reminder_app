@@ -1,7 +1,7 @@
 /**
  * Contacts Screen — WhatsApp Alert Recipients with Smart Phone Number Validation & In-App Toast
  */
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { FAB, Modal, Portal, TextInput, Button, Switch } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useContacts, Contact } from '../../hooks/useContacts';
@@ -31,6 +32,13 @@ export default function ContactsScreen() {
   const [groupId, setGroupId] = useState('');
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Re-fetch automatically on tab focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchContacts(false);
+    }, [fetchContacts])
+  );
 
   const openAddModal = (contact?: Contact) => {
     if (contact) {
