@@ -17,6 +17,7 @@ import { useDatabase } from '../../contexts/DatabaseContext';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { showMessage } from '../../utils/dialogs';
 import { GeofenceRadarBanner } from '../../components/GeofenceRadarBanner';
+import { formatDisplayDate } from '../../utils/date';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
 interface DashboardStats {
@@ -244,7 +245,7 @@ export default function DashboardScreen() {
                 <View style={styles.expenseDetails}>
                   <Text style={styles.expenseCategory}>{expense.category_name || 'Other'}</Text>
                   <Text style={styles.expenseNote} numberOfLines={1}>
-                    {expense.note || new Date(expense.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                    {expense.note ? `${expense.note} • ${formatDisplayDate(expense.date)}` : formatDisplayDate(expense.date)}
                   </Text>
                 </View>
 

@@ -2,6 +2,8 @@
  * Professional WhatsApp Message Templates for Loans & Debts (Khata / Udhaar)
  */
 
+import { formatToDDMMYYYY } from '../utils/date';
+
 export interface LoanMessageData {
   personName: string;
   type: 'lent' | 'borrowed'; // 'lent' = I gave loan (they owe me), 'borrowed' = I took loan (I owe them)
@@ -26,16 +28,18 @@ export function formatINR(amount: number): string {
 export function createLoanAcknowledgmentMessage(data: LoanMessageData): string {
   const sender = data.userName || 'Me';
   const remaining = (data.amount || 0) - (data.amountRepaid || 0);
+  const formattedDate = formatToDDMMYYYY(data.date);
+  const formattedDueDate = data.dueDate ? formatToDDMMYYYY(data.dueDate) : null;
 
   if (data.type === 'lent') {
     return [
       `🤝 *LOAN / CREDIT ACKNOWLEDGMENT*`,
       ``,
       `Dear *${data.personName}*,`,
-      `This is a confirmation record that *${sender}* has provided/transferred a loan of *${formatINR(data.amount)}* on *${data.date}*.`,
+      `This is a confirmation record that *${sender}* has provided/transferred a loan of *${formatINR(data.amount)}* on *${formattedDate}*.`,
       ``,
       data.note ? `📝 *Purpose/Note:* ${data.note}` : null,
-      data.dueDate ? `📅 *Agreed Due Date:* ${data.dueDate}` : null,
+      formattedDueDate ? `📅 *Agreed Due Date:* ${formattedDueDate}` : null,
       `💰 *Pending Balance:* ${formatINR(remaining)}`,
       ``,
       `_Kindly keep this message for your personal records._`,
@@ -50,10 +54,10 @@ export function createLoanAcknowledgmentMessage(data: LoanMessageData): string {
     `🤝 *LOAN RECEIPT ACKNOWLEDGMENT*`,
     ``,
     `Dear *${data.personName}*,`,
-    `This is to confirm that *${sender}* has received a loan of *${formatINR(data.amount)}* from you on *${data.date}*.`,
+    `This is to confirm that *${sender}* has received a loan of *${formatINR(data.amount)}* from you on *${formattedDate}*.`,
     ``,
     data.note ? `📝 *Purpose/Note:* ${data.note}` : null,
-    data.dueDate ? `📅 *Agreed Repayment Date:* ${data.dueDate}` : null,
+    formattedDueDate ? `📅 *Agreed Repayment Date:* ${formattedDueDate}` : null,
     ``,
     `_I will ensure timely repayment as agreed. Thank you for your support!_`,
   ]
@@ -72,15 +76,17 @@ export function createLoanReminderMessage(
 ): string {
   const sender = data.userName || 'Me';
   const remaining = (data.amount || 0) - (data.amountRepaid || 0);
+  const formattedDate = formatToDDMMYYYY(data.date);
+  const formattedDueDate = data.dueDate ? formatToDDMMYYYY(data.dueDate) : null;
 
   if (style === 'formal') {
     return [
       `📢 *PAYMENT REMINDER*`,
       ``,
       `Dear *${data.personName}*,`,
-      `This is a formal reminder regarding the pending balance of *${formatINR(remaining)}* (from the original loan of ${formatINR(data.amount)} on ${data.date}).`,
+      `This is a formal reminder regarding the pending balance of *${formatINR(remaining)}* (from the original loan of ${formatINR(data.amount)} on ${formattedDate}).`,
       ``,
-      data.dueDate ? `📅 *Due Date:* ${data.dueDate}` : null,
+      formattedDueDate ? `📅 *Due Date:* ${formattedDueDate}` : null,
       data.note ? `📝 *Note:* ${data.note}` : null,
       ``,
       `Kindly arrange the repayment at your earliest convenience.`,
@@ -96,7 +102,7 @@ export function createLoanReminderMessage(
       `⚠️ *OVERDUE PAYMENT NOTICE*`,
       ``,
       `Dear *${data.personName}*,`,
-      `Your payment of *${formatINR(remaining)}* is now overdue${data.dueDate ? ` (due since ${data.dueDate})` : ''}.`,
+      `Your payment of *${formatINR(remaining)}* is now overdue${formattedDueDate ? ` (due since ${formattedDueDate})` : ''}.`,
       ``,
       `Please clear the remaining balance of *${formatINR(remaining)}* today or reach out if you need an extension.`,
       ``,
@@ -112,9 +118,9 @@ export function createLoanReminderMessage(
     `👋 *GENTLE PAYMENT REMINDER*`,
     ``,
     `Hi *${data.personName}*, hope you are doing well!`,
-    `Just a gentle reminder regarding the pending balance of *${formatINR(remaining)}* (out of ${formatINR(data.amount)} on ${data.date}).`,
+    `Just a gentle reminder regarding the pending balance of *${formatINR(remaining)}* (out of ${formatINR(data.amount)} on ${formattedDate}).`,
     ``,
-    data.dueDate ? `📅 *Expected Date:* ${data.dueDate}` : null,
+    formattedDueDate ? `📅 *Expected Date:* ${formattedDueDate}` : null,
     data.note ? `📝 *Note:* ${data.note}` : null,
     ``,
     `Whenever convenient, kindly arrange for the transfer.`,
@@ -136,14 +142,16 @@ export function createRepaymentReceiptMessage(
   const prevRemaining = (data.amount || 0) - (data.amountRepaid || 0);
   const newRemaining = Math.max(0, prevRemaining - repaymentAmount);
   const isSettled = newRemaining <= 0;
+  const formattedDate = formatToDDMMYYYY(data.date);
+  const todayStr = formatToDDMMYYYY(new Date());
 
   return [
     isSettled ? `🎉 *LOAN FULLY SETTLED & CLEARED*` : `✅ *PAYMENT RECEIVED RECEIPT*`,
     ``,
     `Dear *${data.personName}*,`,
-    `Thank you! Received a payment of *${formatINR(repaymentAmount)}* on *${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}*.`,
+    `Thank you! Received a payment of *${formatINR(repaymentAmount)}* on *${todayStr}*.`,
     ``,
-    `💰 *Original Loan:* ${formatINR(data.amount)} (${data.date})`,
+    `💰 *Original Loan:* ${formatINR(data.amount)} (${formattedDate})`,
     `💰 *Payment Received:* ${formatINR(repaymentAmount)}`,
     `📊 *Remaining Balance:* ${formatINR(newRemaining)}`,
     `🔖 *Status:* ${isSettled ? '✅ Fully Settled (Zero Balance)' : '⏳ Partially Paid'}`,
@@ -151,6 +159,9 @@ export function createRepaymentReceiptMessage(
     isSettled
       ? `_This loan is now completely settled and closed in our records. Thank you!_`
       : `_Kindly retain this receipt for your records. Thank you!_`,
+    `Thank you!`,
     `— *${sender}*`,
-  ].join('\n');
+  ]
+    .filter((line) => line !== null)
+    .join('\n');
 }

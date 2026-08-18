@@ -16,6 +16,8 @@ import { useDatabase } from '../../contexts/DatabaseContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useExpenses, Expense } from '../../hooks/useExpenses';
 import { confirmAction, showMessage } from '../../utils/dialogs';
+import { DatePickerInput } from '../../components/DatePickerInput';
+import { formatToDDMMYYYY, formatToISO } from '../../utils/date';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
 interface CategoryItem {
@@ -60,7 +62,7 @@ export default function EditExpenseScreen() {
         setExpense(exp);
         setAmount(exp.amount.toString());
         setNote(exp.note || '');
-        setExpenseDate(exp.date);
+        setExpenseDate(formatToDDMMYYYY(exp.date));
       }
 
       const cats = await db.getAllAsync<CategoryItem>(
@@ -90,7 +92,8 @@ export default function EditExpenseScreen() {
 
     setSaving(true);
     try {
-      await updateExpense(expense.id, selectedCategory.id, amountNum, expenseDate, note);
+      const isoDate = formatToISO(expenseDate) || new Date().toISOString().split('T')[0];
+      await updateExpense(expense.id, selectedCategory.id, amountNum, isoDate, note);
       showMessage('Expense Updated', `Saved changes for Rs. ${amountNum.toLocaleString('en-IN')}`, 'success');
       router.back();
     } catch (error: any) {
@@ -157,17 +160,11 @@ export default function EditExpenseScreen() {
           })}
         </View>
 
-        <TextInput
-          label="Date"
+        <DatePickerInput
+          label="Date (DD/MM/YYYY)"
           value={expenseDate}
-          onChangeText={setExpenseDate}
-          mode="outlined"
-          placeholder="YYYY-MM-DD"
+          onChangeDate={(ddmm) => setExpenseDate(ddmm)}
           style={styles.input}
-          outlineColor={Colors.border}
-          activeOutlineColor={Colors.primary}
-          textColor={Colors.text}
-          theme={{ colors: { background: Colors.surface } }}
         />
 
         <TextInput

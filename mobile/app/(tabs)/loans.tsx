@@ -30,6 +30,8 @@ import { useLoans, Loan } from '../../hooks/useLoans';
 import { useContacts } from '../../hooks/useContacts';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { confirmAction, showMessage } from '../../utils/dialogs';
+import { DatePickerInput } from '../../components/DatePickerInput';
+import { formatToDDMMYYYY, formatToISO, getTodayDDMMYYYY, getTodayISO } from '../../utils/date';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 import { ReminderStyle, formatINR } from '../../services/loan-templates';
 
@@ -71,7 +73,7 @@ export default function LoansScreen() {
   const [personName, setPersonName] = useState('');
   const [personPhone, setPersonPhone] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(getTodayDDMMYYYY());
   const [dueDate, setDueDate] = useState('');
   const [note, setNote] = useState('');
   const [autoNotify, setAutoNotify] = useState(true);
@@ -103,8 +105,8 @@ export default function LoansScreen() {
       setPersonName(loan.person_name);
       setPersonPhone(loan.person_phone);
       setAmount(String(loan.amount));
-      setDate(loan.date);
-      setDueDate(loan.due_date || '');
+      setDate(formatToDDMMYYYY(loan.date));
+      setDueDate(loan.due_date ? formatToDDMMYYYY(loan.due_date) : '');
       setNote(loan.note || '');
       setAutoNotify(loan.auto_notify === 1);
     } else {
@@ -113,7 +115,7 @@ export default function LoansScreen() {
       setPersonName('');
       setPersonPhone('');
       setAmount('');
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(getTodayDDMMYYYY());
       setDueDate('');
       setNote('');
       setAutoNotify(true);
@@ -134,6 +136,9 @@ export default function LoansScreen() {
 
     setSaving(true);
     try {
+      const isoDate = formatToISO(date) || getTodayISO();
+      const isoDueDate = dueDate ? formatToISO(dueDate) : undefined;
+
       if (editingLoanId) {
         const existing = loans.find((l) => l.id === editingLoanId);
         await updateLoan(
@@ -143,8 +148,8 @@ export default function LoansScreen() {
           loanType,
           numAmount,
           existing?.amount_repaid || 0,
-          date,
-          dueDate || undefined,
+          isoDate,
+          isoDueDate,
           note || undefined
         );
         showMessage('Record Updated', 'Loan details updated successfully', 'success');
@@ -154,8 +159,8 @@ export default function LoansScreen() {
           personPhone,
           loanType,
           numAmount,
-          date,
-          dueDate || undefined,
+          isoDate,
+          isoDueDate,
           note || undefined,
           autoNotify
         );
@@ -343,13 +348,13 @@ export default function LoansScreen() {
         <View style={styles.detailsRow}>
           <View style={styles.detailItem}>
             <MaterialCommunityIcons name="calendar" size={14} color={Colors.textMuted} />
-            <Text style={styles.detailText}>Given: {item.date}</Text>
+            <Text style={styles.detailText}>Given: {formatToDDMMYYYY(item.date)}</Text>
           </View>
           {item.due_date && (
             <View style={styles.detailItem}>
               <MaterialCommunityIcons name="calendar-clock" size={14} color={Colors.secondary} />
               <Text style={[styles.detailText, { color: Colors.secondary, fontWeight: '600' }]}>
-                Due: {item.due_date}
+                Due: {formatToDDMMYYYY(item.due_date)}
               </Text>
             </View>
           )}
@@ -616,26 +621,18 @@ export default function LoansScreen() {
 
             {/* Date & Due Date */}
             <View style={styles.modalRow}>
-              <TextInput
-                label="Date (YYYY-MM-DD)"
+              <DatePickerInput
+                label="Date (DD/MM/YYYY) *"
                 value={date}
-                onChangeText={setDate}
-                mode="outlined"
-                style={[styles.modalInput, { flex: 1 }]}
-                outlineColor={Colors.border}
-                activeOutlineColor={Colors.secondary}
-                theme={{ colors: { background: Colors.surface } }}
+                onChangeDate={(ddmm) => setDate(ddmm)}
+                style={{ flex: 1 }}
               />
-              <TextInput
+              <DatePickerInput
                 label="Due Date (Optional)"
                 value={dueDate}
-                onChangeText={setDueDate}
-                mode="outlined"
-                placeholder="YYYY-MM-DD"
-                style={[styles.modalInput, { flex: 1 }]}
-                outlineColor={Colors.border}
-                activeOutlineColor={Colors.secondary}
-                theme={{ colors: { background: Colors.surface } }}
+                onChangeDate={(ddmm) => setDueDate(ddmm)}
+                placeholder="DD/MM/YYYY"
+                style={{ flex: 1 }}
               />
             </View>
 

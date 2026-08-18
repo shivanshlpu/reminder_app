@@ -22,6 +22,8 @@ import { exportToPdf } from '../../services/export-pdf';
 import { exportToExcel } from '../../services/export-excel';
 import { confirmAction, showMessage } from '../../utils/dialogs';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
+import { DatePickerInput } from '../../components/DatePickerInput';
+import { getTodayDDMMYYYY, formatToISO, formatDisplayDate } from '../../utils/date';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
 interface CategoryItem {
@@ -47,7 +49,7 @@ export default function ExpensesScreen() {
 
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [expenseDate, setExpenseDate] = useState(new Date().toISOString().split('T')[0]);
+  const [expenseDate, setExpenseDate] = useState(getTodayDDMMYYYY());
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -85,7 +87,7 @@ export default function ExpensesScreen() {
     await loadCategories();
     setAmount('');
     setNote('');
-    setExpenseDate(new Date().toISOString().split('T')[0]);
+    setExpenseDate(getTodayDDMMYYYY());
     setShowAddModal(true);
   };
 
@@ -103,7 +105,8 @@ export default function ExpensesScreen() {
 
     setSaving(true);
     try {
-      await addExpense(activeCat.id, amountNum, expenseDate, note);
+      const isoDate = formatToISO(expenseDate) || new Date().toISOString().split('T')[0];
+      await addExpense(activeCat.id, amountNum, isoDate, note);
       setShowAddModal(false);
       showMessage('Expense Recorded', `Added Rs. ${amountNum.toLocaleString('en-IN')} under ${activeCat.name}`, 'success');
     } catch (error: any) {
@@ -164,7 +167,7 @@ export default function ExpensesScreen() {
       </View>
       <View style={styles.expenseDetails}>
         <Text style={styles.expenseCategory}>{item.category_name || 'Uncategorized'}</Text>
-        <Text style={styles.expenseDate}>{item.date}</Text>
+        <Text style={styles.expenseDate}>{formatDisplayDate(item.date)}</Text>
         {item.note && <Text style={styles.expenseNote} numberOfLines={1}>{item.note}</Text>}
       </View>
       <View style={styles.amountWrap}>
@@ -323,17 +326,11 @@ export default function ExpensesScreen() {
                 </View>
               </View>
 
-              <TextInput
-                label="Date"
+              <DatePickerInput
+                label="Expense Date (DD/MM/YYYY)"
                 value={expenseDate}
-                onChangeText={setExpenseDate}
-                mode="outlined"
-                placeholder="YYYY-MM-DD"
+                onChangeDate={(ddmm) => setExpenseDate(ddmm)}
                 style={styles.modalInput}
-                outlineColor={Colors.border}
-                activeOutlineColor={Colors.primary}
-                textColor={Colors.text}
-                theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
               />
 
               <TextInput

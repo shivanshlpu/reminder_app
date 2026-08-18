@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { Expense } from '../hooks/useExpenses';
+import { formatToDDMMYYYY } from '../utils/date';
 
 /**
  * Generates and shares an Excel expense report.
@@ -16,7 +17,7 @@ export async function exportToExcel(
 ): Promise<void> {
   // Prepare data rows
   const data = expenses.map((e) => ({
-    Date: e.date,
+    Date: formatToDDMMYYYY(e.date),
     Category: e.category_name || 'Other',
     Amount: e.amount,
     Note: e.note || '',

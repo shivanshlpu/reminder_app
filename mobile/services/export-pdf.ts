@@ -7,6 +7,7 @@ import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 import { Expense } from '../hooks/useExpenses';
 import { whatsappApi } from './whatsapp-api';
+import { formatToDDMMYYYY } from '../utils/date';
 
 export async function exportToPdf(
   expenses: Expense[],
@@ -214,7 +215,7 @@ export async function exportToPdf(
               .map(
                 (e) => `
               <tr>
-                <td class="cell-date">${e.date}</td>
+                <td class="cell-date">${formatToDDMMYYYY(e.date)}</td>
                 <td class="cell-cat">
                   <span class="cat-dot" style="background-color: ${e.category_color || '#4F46E5'}"></span>
                   <span>${e.category_name || 'Other'}</span>
