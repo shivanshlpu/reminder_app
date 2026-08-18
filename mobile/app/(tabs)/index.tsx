@@ -16,6 +16,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useDatabase } from '../../contexts/DatabaseContext';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { showMessage } from '../../utils/dialogs';
+import { GeofenceRadarBanner } from '../../components/GeofenceRadarBanner';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
 interface DashboardStats {
@@ -153,6 +154,9 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Live Geofence Radar & Proximity Status */}
+      <GeofenceRadarBanner onPressManage={() => router.push('/(tabs)/locations')} />
 
       {/* Overview Grid (Side by side on Laptop, stacked on Mobile) */}
       <View style={[styles.overviewGrid, isWide && styles.overviewGridDesktop]}>

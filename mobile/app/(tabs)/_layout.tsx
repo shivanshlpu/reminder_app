@@ -6,11 +6,15 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Fonts } from '../../constants/theme';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useGlobalGeofence } from '../../hooks/useGlobalGeofence';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const bottomPadding = Math.max(insets.bottom, Platform.OS === 'ios' ? 20 : 12);
   const tabBarHeight = 54 + bottomPadding;
+
+  // Initialize global GPS geofencing & proximity watcher across all tabs
+  useGlobalGeofence();
 
   return (
     <Tabs

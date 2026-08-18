@@ -139,20 +139,24 @@ router.post('/send', async (req: Request, res: Response) => {
     const vars: TemplateVars = { location: locationName || 'Unknown Location' };
     const messageContent = message || renderTemplate(templateStr, vars);
 
-    const results = await Promise.all(
-      recipients.map(async (recipient: { phone: string; isGroup: boolean }) => {
-        const result = await baileysService.sendMessage(
-          recipient.phone,
-          messageContent,
-          recipient.isGroup
-        );
-        return {
-          phone: recipient.phone,
-          isGroup: recipient.isGroup,
-          ...result,
-        };
-      })
-    );
+    const results = [];
+    for (let i = 0; i < recipients.length; i++) {
+      const recipient = recipients[i];
+      if (i > 0) {
+        // Safe 1.5s delay between multiple recipients to prevent WhatsApp rate-limit / spam block
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      const result = await baileysService.sendMessage(
+        recipient.phone,
+        messageContent,
+        recipient.isGroup
+      );
+      results.push({
+        phone: recipient.phone,
+        isGroup: recipient.isGroup,
+        ...result,
+      });
+    }
 
     const allSuccessful = results.every((r) => r.success);
 

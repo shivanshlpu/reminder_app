@@ -34,6 +34,7 @@ import {
   resetLocationDailyTrigger,
 } from '../../services/geofence';
 import { MapPickerModal } from '../../components/MapPickerModal';
+import { GeofenceRadarBanner } from '../../components/GeofenceRadarBanner';
 import { confirmAction, showMessage } from '../../utils/dialogs';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
@@ -432,6 +433,9 @@ export default function LocationsScreen() {
         contentContainerStyle={styles.listContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.secondary} colors={[Colors.secondary]} />}
       >
+        {/* Live GPS Proximity Radar & Auto-Dispatch Status */}
+        <GeofenceRadarBanner />
+
         {locations.length === 0 ? (
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="map-marker-plus-outline" size={54} color={Colors.textMuted} />
