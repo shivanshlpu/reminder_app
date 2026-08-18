@@ -2,7 +2,9 @@
  * Root Layout
  * Light Theme + Responsive Mobile Viewport Frame + Auth guard + Global Toast Banner
  */
+import '../services/geofence-task';
 import React, { useEffect } from 'react';
+
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { PaperProvider, MD3LightTheme } from 'react-native-paper';

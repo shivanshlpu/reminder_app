@@ -159,10 +159,21 @@ export default function LocationsScreen() {
     setShowAddModal(true);
   };
 
-  const openMapStudio = () => {
+  const openMapStudio = async () => {
     setShowAddModal(false);
+    if (!latitude || !longitude) {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          setLatitude(loc.coords.latitude.toFixed(6));
+          setLongitude(loc.coords.longitude.toFixed(6));
+        }
+      } catch (e) {}
+    }
     setShowMapPicker(true);
   };
+
 
   const handleMapPinSelected = (lat: number, lng: number, placeName?: string) => {
     setLatitude(lat.toFixed(6));
@@ -459,11 +470,12 @@ export default function LocationsScreen() {
         visible={showMapPicker}
         onDismiss={handleMapPickerDismiss}
         onSelectLocation={handleMapPinSelected}
-        initialLat={parseFloat(latitude) || 28.6139}
-        initialLng={parseFloat(longitude) || 77.2090}
+        initialLat={latitude ? parseFloat(latitude) : undefined}
+        initialLng={longitude ? parseFloat(longitude) : undefined}
         initialName={locationName}
         radius={parseInt(radius) || 10}
       />
+
 
       {/* Add / Edit Location & Custom Message Rules Modal */}
       <Portal>

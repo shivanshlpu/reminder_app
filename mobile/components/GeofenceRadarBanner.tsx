@@ -1,9 +1,9 @@
 /**
- * Live Geofence Radar & Proximity Status Banner
- * Provides clear visual feedback on GPS permissions, live distance to nearest gate, and auto-dispatch readiness.
+ * Live Geofence Radar & 24/7 Background Status Banner
+ * Provides clear visual feedback on GPS permissions, foreground service status, live distance to nearest gate, and auto-dispatch readiness.
  */
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useGlobalGeofence } from '../hooks/useGlobalGeofence';
 import { showMessage } from '../utils/dialogs';
@@ -32,7 +32,7 @@ export function GeofenceRadarBanner({ onPressManage, showTestButton = true }: Ge
     const granted = await requestPermissions();
     setRequestingPerms(false);
     if (granted) {
-      showMessage('Permission Granted', 'GPS gate monitoring is now active!', 'success');
+      showMessage('Permission Granted', '24/7 GPS gate monitoring is now active!', 'success');
     } else {
       showMessage('Permission Required', 'Please enable Location in device settings for auto-messages.', 'error');
     }
@@ -73,7 +73,7 @@ export function GeofenceRadarBanner({ onPressManage, showTestButton = true }: Ge
         <View style={styles.textWrap}>
           <Text style={styles.permTitle}>Location Permission Needed</Text>
           <Text style={styles.permSubtitle}>
-            Enable location so your app can automatically send WhatsApp messages when you reach College Gate, Hostel, etc.
+            Enable location ("Allow all the time") so your app can automatically send WhatsApp arrival messages even when your phone is off or in your pocket.
           </Text>
           <TouchableOpacity
             style={styles.grantBtn}
@@ -105,7 +105,7 @@ export function GeofenceRadarBanner({ onPressManage, showTestButton = true }: Ge
         <View style={styles.textWrap}>
           <Text style={styles.inactiveTitle}>Auto-Arrival Geofencing Inactive</Text>
           <Text style={styles.inactiveSubtitle}>
-            Add a pinned location (e.g. College Gate) and turn ON "Auto-Send" to enable automatic arrival messages.
+            Add a pinned location (e.g. College Gate) and turn ON "Auto-Send" to enable automatic 24/7 arrival messages.
           </Text>
         </View>
         {onPressManage && (
@@ -117,7 +117,7 @@ export function GeofenceRadarBanner({ onPressManage, showTestButton = true }: Ge
     );
   }
 
-  // State 3: Active Monitoring Radar
+  // State 3: Active Monitoring Radar & 24/7 Background Service
   const nearest = proximity.nearestRegion;
 
   return (
@@ -126,7 +126,9 @@ export function GeofenceRadarBanner({ onPressManage, showTestButton = true }: Ge
         <View style={styles.statusPill}>
           <View style={styles.pulseDot} />
           <Text style={styles.statusPillText}>
-            GPS RADAR ACTIVE ({proximity.monitoredCount} GATE{proximity.monitoredCount > 1 ? 'S' : ''})
+            {Platform.OS === 'web'
+              ? `GPS RADAR ACTIVE (${proximity.monitoredCount} GATE${proximity.monitoredCount > 1 ? 'S' : ''})`
+              : `24/7 BACKGROUND SERVICE ACTIVE (${proximity.monitoredCount} GATE${proximity.monitoredCount > 1 ? 'S' : ''})`}
           </Text>
         </View>
 
@@ -134,6 +136,16 @@ export function GeofenceRadarBanner({ onPressManage, showTestButton = true }: Ge
           <MaterialCommunityIcons name="sync" size={16} color={Colors.primary} />
         </TouchableOpacity>
       </View>
+
+      {/* Persistent Notification indicator */}
+      {Platform.OS !== 'web' && (
+        <View style={styles.notificationInfoRow}>
+          <MaterialCommunityIcons name="bell-ring-outline" size={13} color="#15803D" />
+          <Text style={styles.notificationInfoText}>
+            Active in notification bar • Runs when phone is locked & other apps are open
+          </Text>
+        </View>
+      )}
 
       {nearest ? (
         <View style={styles.nearestWrap}>
@@ -305,7 +317,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    marginBottom: 4,
   },
   statusPill: {
     flexDirection: 'row',
@@ -327,6 +339,18 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#15803D',
     letterSpacing: 0.5,
+  },
+  notificationInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: Spacing.xs,
+    marginTop: 2,
+  },
+  notificationInfoText: {
+    fontSize: 11,
+    color: '#166534',
+    fontWeight: '500',
   },
   syncIconBtn: {
     padding: 4,

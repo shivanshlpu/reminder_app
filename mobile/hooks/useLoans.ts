@@ -72,17 +72,18 @@ export function useLoans() {
     ): Promise<{ loanId: number; messageSent: boolean }> => {
       if (!db || !user) return { loanId: 0, messageSent: false };
 
-      const cleanPhone = personPhone.replace(/[^\d+]/g, '');
+      const cleanPhone = personPhone ? String(personPhone).replace(/[^\d+]/g, '') : '';
+      const numAmount = typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 0;
 
       const res = await db.runAsync(
         `INSERT INTO loans (user_id, person_name, person_phone, type, amount, amount_repaid, date, due_date, note, status, auto_notify) 
          VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 'pending', ?)`,
         [
           user.uid,
-          personName.trim(),
+          (personName || '').trim(),
           cleanPhone,
           type,
-          amount,
+          numAmount,
           date,
           dueDate || null,
           note?.trim() || null,
@@ -99,9 +100,9 @@ export function useLoans() {
       if (autoNotify && cleanPhone) {
         try {
           const messageText = createLoanAcknowledgmentMessage({
-            personName: personName.trim(),
+            personName: (personName || '').trim(),
             type,
-            amount,
+            amount: numAmount,
             amountRepaid: 0,
             date,
             dueDate,
@@ -152,19 +153,23 @@ export function useLoans() {
     ) => {
       if (!db || !user) return;
 
+      const cleanPhone = personPhone ? String(personPhone).replace(/[^\d+]/g, '') : '';
+      const numAmount = typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 0;
+      const numRepaid = typeof amountRepaid === 'number' ? amountRepaid : parseFloat(String(amountRepaid).replace(/[^0-9.]/g, '')) || 0;
+
       const calcStatus =
         status ||
-        (amountRepaid >= amount ? 'settled' : amountRepaid > 0 ? 'partially_paid' : 'pending');
+        (numRepaid >= numAmount ? 'settled' : numRepaid > 0 ? 'partially_paid' : 'pending');
 
       await db.runAsync(
         `UPDATE loans SET person_name = ?, person_phone = ?, type = ?, amount = ?, amount_repaid = ?, date = ?, due_date = ?, note = ?, status = ? 
          WHERE id = ? AND user_id = ?`,
         [
-          personName.trim(),
-          personPhone.replace(/[^\d+]/g, ''),
+          (personName || '').trim(),
+          cleanPhone,
           type,
-          amount,
-          amountRepaid,
+          numAmount,
+          numRepaid,
           date,
           dueDate || null,
           note?.trim() || null,
@@ -177,6 +182,7 @@ export function useLoans() {
     },
     [db, user, fetchLoans]
   );
+
 
   /**
    * Delete a loan record

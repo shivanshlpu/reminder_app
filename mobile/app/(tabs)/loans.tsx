@@ -34,6 +34,7 @@ import { DatePickerInput } from '../../components/DatePickerInput';
 import { formatToDDMMYYYY, formatToISO, getTodayDDMMYYYY, getTodayISO } from '../../utils/date';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 import { ReminderStyle, formatINR } from '../../services/loan-templates';
+import { pickContactFromDevice } from '../../services/contact-picker';
 
 type FilterTab = 'lent' | 'borrowed' | 'settled' | 'all';
 
@@ -78,6 +79,7 @@ export default function LoansScreen() {
   const [note, setNote] = useState('');
   const [autoNotify, setAutoNotify] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pickingContact, setPickingContact] = useState(false);
 
   // Repayment Modal
   const [showRepaymentModal, setShowRepaymentModal] = useState(false);
@@ -98,13 +100,35 @@ export default function LoansScreen() {
     setRefreshing(false);
   };
 
+  const handlePickPhoneContact = async () => {
+    setPickingContact(true);
+    try {
+      const res = await pickContactFromDevice();
+      if (res.success && res.contact) {
+        if (res.contact.name) {
+          setPersonName(res.contact.name);
+        }
+        if (res.contact.phone) {
+          setPersonPhone(res.contact.phone);
+        }
+        showMessage('Contact Selected', `Selected ${res.contact.name} (${res.contact.phone})`, 'whatsapp');
+      } else if (res.error) {
+        showMessage('Contact Picker', res.error, 'info');
+      }
+    } catch (e: any) {
+      showMessage('Picker Error', e?.message || 'Could not pick contact', 'error');
+    } finally {
+      setPickingContact(false);
+    }
+  };
+
   const openAddModal = (loan?: Loan, defaultType: 'lent' | 'borrowed' = 'lent') => {
     if (loan) {
       setEditingLoanId(loan.id);
       setLoanType(loan.type);
-      setPersonName(loan.person_name);
-      setPersonPhone(loan.person_phone);
-      setAmount(String(loan.amount));
+      setPersonName(loan.person_name || '');
+      setPersonPhone(loan.person_phone || '');
+      setAmount(String(loan.amount || ''));
       setDate(formatToDDMMYYYY(loan.date));
       setDueDate(loan.due_date ? formatToDDMMYYYY(loan.due_date) : '');
       setNote(loan.note || '');
@@ -124,15 +148,18 @@ export default function LoansScreen() {
   };
 
   const handleSaveLoan = async () => {
-    if (!personName.trim()) {
+    const trimmedName = (personName || '').trim();
+    if (!trimmedName) {
       showMessage('Validation Error', 'Please enter the person\'s name', 'error');
       return;
     }
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) {
+    const cleanAmount = typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 0;
+    if (isNaN(cleanAmount) || cleanAmount <= 0) {
       showMessage('Validation Error', 'Please enter a valid amount greater than 0', 'error');
       return;
     }
+
+    const cleanPhone = personPhone ? String(personPhone).replace(/[^\d+]/g, '') : '';
 
     setSaving(true);
     try {
@@ -143,10 +170,10 @@ export default function LoansScreen() {
         const existing = loans.find((l) => l.id === editingLoanId);
         await updateLoan(
           editingLoanId,
-          personName,
-          personPhone,
+          trimmedName,
+          cleanPhone,
           loanType,
-          numAmount,
+          cleanAmount,
           existing?.amount_repaid || 0,
           isoDate,
           isoDueDate,
@@ -155,10 +182,10 @@ export default function LoansScreen() {
         showMessage('Record Updated', 'Loan details updated successfully', 'success');
       } else {
         const result = await addLoan(
-          personName,
-          personPhone,
+          trimmedName,
+          cleanPhone,
           loanType,
-          numAmount,
+          cleanAmount,
           isoDate,
           isoDueDate,
           note || undefined,
@@ -168,11 +195,11 @@ export default function LoansScreen() {
         if (result.messageSent) {
           showMessage(
             'Record Created & WhatsApp Alert Sent!',
-            `Sent professional loan confirmation to ${personName} (+${personPhone})`,
+            `Sent professional loan confirmation to ${trimmedName} (+${cleanPhone})`,
             'whatsapp'
           );
         } else {
-          showMessage('Record Saved', `Recorded ${loanType === 'lent' ? 'loan given' : 'loan taken'} of ${formatINR(numAmount)}`, 'success');
+          showMessage('Record Saved', `Recorded ${loanType === 'lent' ? 'loan given' : 'loan taken'} of ${formatINR(cleanAmount)}`, 'success');
         }
       }
       setShowAddModal(false);
@@ -182,6 +209,7 @@ export default function LoansScreen() {
       setSaving(false);
     }
   };
+
 
   const handleDelete = (id: number, name: string) => {
     confirmAction(
@@ -557,6 +585,19 @@ export default function LoansScreen() {
           />
 
           <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+            {/* Pick from Phonebook Button */}
+            <TouchableOpacity
+              style={styles.pickContactBtn}
+              onPress={handlePickPhoneContact}
+              disabled={pickingContact}
+              activeOpacity={0.8}
+            >
+              <MaterialCommunityIcons name="contacts" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.pickContactBtnText}>
+                {pickingContact ? 'Opening Phonebook...' : '📱 Select from Phone Contacts'}
+              </Text>
+            </TouchableOpacity>
+
             {/* Person Name */}
             <TextInput
               label="Person's Name *"
@@ -568,6 +609,7 @@ export default function LoansScreen() {
               activeOutlineColor={Colors.secondary}
               theme={{ colors: { background: Colors.surface } }}
             />
+
 
             {/* Quick Contact Picker */}
             {contacts.length > 0 && (
@@ -918,4 +960,21 @@ const styles = StyleSheet.create({
   switchTitle: { fontSize: 12, fontWeight: '700', color: Colors.text },
   switchSub: { fontSize: 10, color: Colors.textSecondary, marginTop: 2 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.md, marginTop: Spacing.md },
+  pickContactBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#25D366',
+    borderRadius: BorderRadius.md,
+    paddingVertical: 9,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
+    ...Shadows.small,
+  },
+  pickContactBtnText: {
+    color: '#FFFFFF',
+    fontSize: Fonts.sizes.xs,
+    fontWeight: '700',
+  },
 });
+

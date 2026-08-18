@@ -12,6 +12,7 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to detect when you arrive at pinned locations.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Background location is needed to automatically notify contacts when you arrive at pinned locations.",
+        "NSContactsUsageDescription": "Allow ExpenseTracker to access contacts so you can easily select WhatsApp recipients and loan partners.",
         "UIBackgroundModes": [
           "location",
           "fetch",
@@ -32,8 +33,10 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "RECEIVE_BOOT_COMPLETED",
+        "READ_CONTACTS",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.READ_CONTACTS"
       ],
       "package": "com.expensetracker.app"
     },

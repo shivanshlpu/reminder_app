@@ -18,6 +18,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useContacts, Contact } from '../../hooks/useContacts';
 import { confirmAction, showMessage } from '../../utils/dialogs';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
+import { pickContactFromDevice } from '../../services/contact-picker';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
 export default function ContactsScreen() {
@@ -32,6 +33,7 @@ export default function ContactsScreen() {
   const [groupId, setGroupId] = useState('');
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [pickingContact, setPickingContact] = useState(false);
 
   // Re-fetch automatically on tab focus
   useFocusEffect(
@@ -55,6 +57,28 @@ export default function ContactsScreen() {
       setGroupId('');
     }
     setShowAddModal(true);
+  };
+
+  const handlePickContact = async () => {
+    setPickingContact(true);
+    try {
+      const res = await pickContactFromDevice();
+      if (res.success && res.contact) {
+        if (res.contact.name) {
+          setContactName(res.contact.name);
+        }
+        if (res.contact.phone) {
+          setPhone(res.contact.phone);
+        }
+        showMessage('Contact Selected', `Selected ${res.contact.name} (${res.contact.phone})`, 'whatsapp');
+      } else if (res.error) {
+        showMessage('Contact Picker', res.error, 'info');
+      }
+    } catch (e: any) {
+      showMessage('Picker Error', e?.message || 'Could not pick contact', 'error');
+    } finally {
+      setPickingContact(false);
+    }
   };
 
   const handleSave = async () => {
@@ -184,8 +208,21 @@ export default function ContactsScreen() {
                 {editingId ? 'Edit Recipient' : 'Add WhatsApp Recipient'}
               </Text>
 
+              {/* 1-Tap Pick from Phone Contacts Button */}
+              <TouchableOpacity
+                style={styles.pickContactBtn}
+                onPress={handlePickContact}
+                disabled={pickingContact}
+                activeOpacity={0.8}
+              >
+                <MaterialCommunityIcons name="contacts" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.pickContactBtnText}>
+                  {pickingContact ? 'Opening Phonebook...' : '📱 Select from Phone Contacts'}
+                </Text>
+              </TouchableOpacity>
+
               <TextInput
-                label="Name / Label"
+                label="Name / Label *"
                 value={contactName}
                 onChangeText={setContactName}
                 mode="outlined"
@@ -199,7 +236,7 @@ export default function ContactsScreen() {
               />
 
               <TextInput
-                label="WhatsApp Phone Number"
+                label="WhatsApp Phone Number *"
                 value={phone}
                 onChangeText={setPhone}
                 mode="outlined"
@@ -215,6 +252,7 @@ export default function ContactsScreen() {
               <Text style={styles.phoneHint}>
                 💡 10-digit numbers automatically get Indian country code (+91).
               </Text>
+
 
               <View style={styles.groupToggleRow}>
                 <Text style={styles.groupToggleLabel}>Is this a WhatsApp Group?</Text>
@@ -296,4 +334,21 @@ const styles = StyleSheet.create({
   groupToggleLabel: { fontSize: Fonts.sizes.md, color: Colors.text },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.md, marginTop: Spacing.md },
   modalBtn: { borderRadius: BorderRadius.md },
+  pickContactBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#25D366',
+    borderRadius: BorderRadius.md,
+    paddingVertical: 10,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+    ...Shadows.small,
+  },
+  pickContactBtnText: {
+    color: '#FFFFFF',
+    fontSize: Fonts.sizes.sm,
+    fontWeight: '700',
+  },
 });
+

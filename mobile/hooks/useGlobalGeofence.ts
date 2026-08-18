@@ -39,10 +39,11 @@ export function useGlobalGeofence() {
 
   // Check initial permission status
   useEffect(() => {
-    checkLocationPermissionStatus().then((granted) => {
-      setPermissionGranted(granted);
+    checkLocationPermissionStatus().then((status) => {
+      setPermissionGranted(status.foreground);
     });
   }, []);
+
 
   /**
    * Sync all pinned locations from local database and restart geofence watcher
@@ -120,13 +121,14 @@ export function useGlobalGeofence() {
    * Request location permissions from user
    */
   const requestPermissions = useCallback(async () => {
-    const granted = await requestLocationPermissions();
-    setPermissionGranted(granted);
-    if (granted) {
+    const permResult = await requestLocationPermissions();
+    setPermissionGranted(permResult.granted);
+    if (permResult.granted) {
       await syncGeofences();
     }
-    return granted;
+    return permResult.granted;
   }, [syncGeofences]);
+
 
   /**
    * Manually test automatic arrival trigger for a location

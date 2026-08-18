@@ -1,20 +1,31 @@
 /**
- * Ultra-Precise Gate Geofencing & Location Proximity Service
- * Monitors GPS location with gate-level precision & intelligent accuracy buffering.
- * Automatically triggers WhatsApp arrival message upon entering the gate radius!
+ * Ultra-Precise Gate Geofencing & 24/7 Background Radar Service
+ * Keeps running continuously in the background via Android Foreground Service + Sticky Notification.
  * Features:
+ * - 24/7 Background native location updates via expo-task-manager & Foreground Service.
+ * - Sticky status bar notification ("📍 Auto-Arrival Radar Active").
  * - Anti-ban sequential WhatsApp dispatch with 1.5s delay between recipients.
  * - Strict 1-per-day guard per location (resettable, persists in AsyncStorage).
- * - Real-time proximity radar & live distance calculation to nearest gate.
- * - Manual test auto-trigger simulation for verification.
+ * - Real-time proximity radar & live distance calculation to nearest gate in foreground.
+ * - Seamless fallback for web & permission state tracking.
  */
+import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { whatsappApi } from './whatsapp-api';
+import {
+  BACKGROUND_GEOFENCE_LOCATION_TASK,
+  STORAGE_MONITORED_REGIONS_KEY,
+  STORAGE_DAILY_TRIGGERS_KEY,
+  STORAGE_LAST_LOCATION_KEY,
+  getTodayDateString,
+  calculateDistanceMeters,
+} from './geofence-task';
+
+export { getTodayDateString, calculateDistanceMeters };
 
 const DEFAULT_GEOFENCE_RADIUS = 35; // 35 meters default for reliable mobile GPS gate detection
-const STORAGE_DAILY_TRIGGERS_KEY = '@geofence_daily_triggers_state';
 
 export interface GeofenceRegion {
   id: number;
@@ -29,7 +40,9 @@ export interface GeofenceRegion {
 
 export interface ProximityStatus {
   permissionGranted: boolean;
+  backgroundPermissionGranted: boolean;
   isMonitoring: boolean;
+  isBackgroundActive: boolean;
   monitoredCount: number;
   currentCoords: { latitude: number; longitude: number; accuracy: number | null } | null;
   nearestRegion: {
@@ -49,16 +62,34 @@ let activeLocationWatcher: Location.LocationSubscription | null = null;
 let monitoredRegions: GeofenceRegion[] = [];
 let lastKnownCoords: { latitude: number; longitude: number; accuracy: number | null } | null = null;
 let proximityListeners: Array<(status: ProximityStatus) => void> = [];
+let isBackgroundActiveState = false;
+let backgroundPermState = false;
 
 /**
- * Returns today's date formatted as YYYY-MM-DD in local time.
+ * Configure Android Notification Channels for high-importance alerts and foreground service.
  */
-export function getTodayDateString(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+export async function setupNotificationChannels(): Promise<void> {
+  if (Platform.OS === 'android') {
+    try {
+      await Notifications.setNotificationChannelAsync('geofence-radar', {
+        name: 'Gate Arrival Alerts',
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#6C63FF',
+        sound: 'default',
+      });
+
+      await Notifications.setNotificationChannelAsync('geofence-service', {
+        name: 'Auto-Arrival Background Radar',
+        importance: Notifications.AndroidImportance.LOW,
+        sound: undefined,
+        enableVibrate: false,
+        showBadge: false,
+      });
+    } catch (e) {
+      console.warn('Failed to set up Android notification channels:', e);
+    }
+  }
 }
 
 /**
@@ -116,60 +147,64 @@ export async function resetLocationDailyTrigger(locationId: number): Promise<voi
 }
 
 /**
- * Calculate precise distance between two GPS coordinates in meters using Haversine formula.
+ * Request high-precision foreground and background ("Allow all the time") location permissions.
  */
-export function calculateDistanceMeters(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number {
-  const R = 6371000; // Earth's radius in meters
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-/**
- * Request high-precision location permissions.
- */
-export async function requestLocationPermissions(): Promise<boolean> {
+export async function requestLocationPermissions(): Promise<{
+  granted: boolean;
+  foreground: boolean;
+  background: boolean;
+}> {
   try {
-    const { status: foreground } = await Location.requestForegroundPermissionsAsync();
-    if (foreground !== 'granted') {
-      console.warn('Foreground location permission not granted');
-      return false;
+    const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+    if (foregroundStatus !== 'granted') {
+      backgroundPermState = false;
+      return { granted: false, foreground: false, background: false };
     }
 
-    try {
-      const { status: background } = await Location.requestBackgroundPermissionsAsync();
-      if (background !== 'granted') {
-        console.warn('Background location permission optional');
+    let backgroundGranted = false;
+    if (Platform.OS !== 'web') {
+      try {
+        const { status: bgStatus } = await Location.requestBackgroundPermissionsAsync();
+        backgroundGranted = bgStatus === 'granted';
+        backgroundPermState = backgroundGranted;
+      } catch (e) {
+        console.warn('Background location permission error/optional on this platform', e);
       }
-    } catch (e) {}
+    }
 
-    return true;
+    return {
+      granted: true,
+      foreground: true,
+      background: backgroundGranted,
+    };
   } catch (e) {
-    return false;
+    return { granted: false, foreground: false, background: false };
   }
 }
 
 /**
  * Check if location permissions are already granted.
  */
-export async function checkLocationPermissionStatus(): Promise<boolean> {
+export async function checkLocationPermissionStatus(): Promise<{
+  foreground: boolean;
+  background: boolean;
+}> {
   try {
-    const { status } = await Location.getForegroundPermissionsAsync();
-    return status === 'granted';
+    const { status: fgStatus } = await Location.getForegroundPermissionsAsync();
+    const fg = fgStatus === 'granted';
+
+    let bg = false;
+    if (Platform.OS !== 'web' && fg) {
+      try {
+        const { status: bgStatus } = await Location.getBackgroundPermissionsAsync();
+        bg = bgStatus === 'granted';
+        backgroundPermState = bg;
+      } catch (e) {}
+    }
+
+    return { foreground: fg, background: bg };
   } catch (e) {
-    return false;
+    return { foreground: false, background: false };
   }
 }
 
@@ -244,6 +279,7 @@ export async function triggerArrivalAlert(
     });
   } catch (e) {}
 
+
   notifyStatusListeners();
 
   return {
@@ -254,83 +290,132 @@ export async function triggerArrivalAlert(
 }
 
 /**
- * Start high-precision continuous gate proximity monitoring.
+ * Start high-precision continuous gate proximity monitoring and 24/7 background foreground service.
  */
 export async function startGeofencing(regions: GeofenceRegion[]): Promise<void> {
   monitoredRegions = regions.filter((r) => r.autoSend);
 
-  if (monitoredRegions.length === 0) {
-    if (activeLocationWatcher) {
-      activeLocationWatcher.remove();
-      activeLocationWatcher = null;
-    }
-    notifyStatusListeners();
-    return;
-  }
-
-  // If watcher is already active, updating monitoredRegions is sufficient!
-  if (activeLocationWatcher) {
-    notifyStatusListeners();
-    return;
-  }
-
-  const hasPerms = await requestLocationPermissions();
-  if (!hasPerms) {
-    notifyStatusListeners();
-    return;
-  }
-
+  // Sync to AsyncStorage for headless background task
   try {
-    activeLocationWatcher = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.High,
-        distanceInterval: 5,
-        timeInterval: 4000,
-      },
-      (location) => {
-        const { latitude, longitude, accuracy } = location.coords;
-        lastKnownCoords = { latitude, longitude, accuracy: accuracy || null };
-
-        monitoredRegions.forEach((region) => {
-          const distance = calculateDistanceMeters(
-            latitude,
-            longitude,
-            region.latitude,
-            region.longitude
-          );
-
-          // Smart Gate Proximity Threshold:
-          // Effective radius: at least 35m (or user setting), plus GPS accuracy buffer
-          const gpsAccuracy = accuracy || 15;
-          const effectiveRadius = Math.max(region.radius || DEFAULT_GEOFENCE_RADIUS, DEFAULT_GEOFENCE_RADIUS);
-          const threshold = effectiveRadius + Math.min(gpsAccuracy, 25);
-
-          // If inside the gate radius
-          if (distance <= threshold) {
-            triggerArrivalAlert(region, distance);
-          }
-        });
-
-        notifyStatusListeners();
-      }
+    await AsyncStorage.setItem(
+      STORAGE_MONITORED_REGIONS_KEY,
+      JSON.stringify(monitoredRegions)
     );
+  } catch (e) {
+    console.warn('Failed to cache monitored regions for background task', e);
+  }
 
-    console.log(`📍 Gate Proximity Radar Active for ${monitoredRegions.length} location(s)`);
-  } catch (error) {
-    console.error('Failed to start proximity monitoring:', error);
+  if (monitoredRegions.length === 0) {
+    await stopGeofencing();
+    return;
+  }
+
+  const permStatus = await requestLocationPermissions();
+  if (!permStatus.granted) {
+    notifyStatusListeners();
+    return;
+  }
+
+  await setupNotificationChannels();
+
+  // 1. Native Background Location Task with Android Foreground Service
+  if (Platform.OS !== 'web') {
+    try {
+      const isTaskRunning = await Location.hasStartedLocationUpdatesAsync(
+        BACKGROUND_GEOFENCE_LOCATION_TASK
+      );
+
+      const locationCount = monitoredRegions.length;
+      const countLabel = `${locationCount} gate${locationCount > 1 ? 's' : ''}`;
+
+      await Location.startLocationUpdatesAsync(BACKGROUND_GEOFENCE_LOCATION_TASK, {
+        accuracy: Location.Accuracy.High,
+        timeInterval: 8000, // 8s GPS poll
+        distanceInterval: 10, // 10m displacement
+        deferredUpdatesInterval: 8000,
+        deferredUpdatesDistance: 10,
+        showsBackgroundLocationIndicator: true,
+        pausesUpdatesAutomatically: false,
+        foregroundService: {
+          notificationTitle: '📍 Auto-Arrival Radar Active',
+          notificationBody: `Monitoring ${countLabel} in background. Messages auto-send upon arrival!`,
+          notificationColor: '#6C63FF',
+        },
+      });
+
+      isBackgroundActiveState = true;
+      console.log(`[Geofence] 🚀 24/7 Background Foreground Service started for ${countLabel}`);
+    } catch (bgError) {
+      console.warn('[Geofence] Background updates initialization notice:', bgError);
+    }
+  }
+
+  // 2. Foreground Watcher for smooth on-screen UI radar updates
+  if (!activeLocationWatcher) {
+    try {
+      activeLocationWatcher = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 5,
+          timeInterval: 4000,
+        },
+        (location) => {
+          const { latitude, longitude, accuracy } = location.coords;
+          lastKnownCoords = { latitude, longitude, accuracy: accuracy || null };
+
+          monitoredRegions.forEach((region) => {
+            const distance = calculateDistanceMeters(
+              latitude,
+              longitude,
+              region.latitude,
+              region.longitude
+            );
+
+            const gpsAccuracy = accuracy || 15;
+            const effectiveRadius = Math.max(region.radius || DEFAULT_GEOFENCE_RADIUS, DEFAULT_GEOFENCE_RADIUS);
+            const threshold = effectiveRadius + Math.min(gpsAccuracy, 25);
+
+            if (distance <= threshold) {
+              triggerArrivalAlert(region, distance);
+            }
+          });
+
+          notifyStatusListeners();
+        }
+      );
+    } catch (fgError) {
+      console.warn('[Geofence] Foreground watcher initialization error:', fgError);
+    }
   }
 
   notifyStatusListeners();
 }
 
 /**
- * Stop proximity monitoring.
+ * Stop proximity monitoring & background foreground service.
  */
-export function stopGeofencing(): void {
+export async function stopGeofencing(): Promise<void> {
   if (activeLocationWatcher) {
     activeLocationWatcher.remove();
     activeLocationWatcher = null;
   }
+
+  if (Platform.OS !== 'web') {
+    try {
+      const isTaskRunning = await Location.hasStartedLocationUpdatesAsync(
+        BACKGROUND_GEOFENCE_LOCATION_TASK
+      );
+      if (isTaskRunning) {
+        await Location.stopLocationUpdatesAsync(BACKGROUND_GEOFENCE_LOCATION_TASK);
+      }
+    } catch (e) {}
+  }
+
+  try {
+    await AsyncStorage.removeItem(STORAGE_MONITORED_REGIONS_KEY);
+  } catch (e) {}
+
+  isBackgroundActiveState = false;
   notifyStatusListeners();
 }
 
@@ -369,7 +454,9 @@ export function getCurrentProximityStatus(): ProximityStatus {
 
   return {
     permissionGranted: !!activeLocationWatcher || lastKnownCoords !== null,
-    isMonitoring: activeLocationWatcher !== null,
+    backgroundPermissionGranted: backgroundPermState,
+    isMonitoring: activeLocationWatcher !== null || isBackgroundActiveState,
+    isBackgroundActive: isBackgroundActiveState,
     monitoredCount: monitoredRegions.length,
     currentCoords: lastKnownCoords,
     nearestRegion,

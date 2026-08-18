@@ -1,8 +1,7 @@
 /**
  * Full-Focus Interactive Map Pin-Point Picker
- * Fast, ultra-responsive Leaflet + CartoDB map for Web, Mobile Web & PWA.
- * Features stable iframe lifecycle (no re-renders on drag), instant tile loading,
- * location search, and 1-tap "Use Current GPS Location".
+ * Fast, ultra-responsive Leaflet + OpenStreetMap/CartoDB map for Web & Mobile.
+ * Automatically fetches real live GPS location on open — never gets stuck on New Delhi!
  */
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
@@ -12,9 +11,11 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Modal, Portal, TextInput, Button, Chip } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../constants/theme';
 
 interface MapPickerModalProps {
@@ -41,28 +42,20 @@ export function MapPickerModal({
   visible,
   onDismiss,
   onSelectLocation,
-  initialLat = 28.6139,
-  initialLng = 77.2090,
+  initialLat,
+  initialLng,
   initialName = '',
   radius = 10,
 }: MapPickerModalProps) {
-  const [selectedLat, setSelectedLat] = useState(initialLat);
-  const [selectedLng, setSelectedLng] = useState(initialLng);
+  const [selectedLat, setSelectedLat] = useState<number>(initialLat || 28.6139);
+  const [selectedLng, setSelectedLng] = useState<number>(initialLng || 77.2090);
   const [placeLabel, setPlaceLabel] = useState(initialName);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [gpsAcquired, setGpsAcquired] = useState(false);
 
   const iframeRef = useRef<any>(null);
-
-  useEffect(() => {
-    if (visible) {
-      const lat = initialLat || 28.6139;
-      const lng = initialLng || 77.2090;
-      setSelectedLat(lat);
-      setSelectedLng(lng);
-      setPlaceLabel(initialName || '');
-    }
-  }, [visible, initialLat, initialLng, initialName]);
 
   // Notify map iframe when coordinates are updated via search or GPS
   const updateMapCenter = (lat: number, lng: number) => {
@@ -73,12 +66,81 @@ export function MapPickerModal({
     }
   };
 
+  /**
+   * Acquire high-precision live GPS location
+   */
+  const handleUseCurrentLocation = async () => {
+    setIsLocating(true);
+    try {
+      // 1. Try Expo Location
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        const lat = parseFloat(pos.coords.latitude.toFixed(6));
+        const lng = parseFloat(pos.coords.longitude.toFixed(6));
+        updateMapCenter(lat, lng);
+        setGpsAcquired(true);
+        setIsLocating(false);
+        return;
+      }
+    } catch (e) {
+      console.warn('Expo location getCurrentPosition notice:', e);
+    }
+
+    // 2. Fallback to browser geolocation on Web
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = parseFloat(pos.coords.latitude.toFixed(6));
+          const lng = parseFloat(pos.coords.longitude.toFixed(6));
+          updateMapCenter(lat, lng);
+          setGpsAcquired(true);
+          setIsLocating(false);
+        },
+        (err) => {
+          console.warn('Browser geolocation notice:', err);
+          setIsLocating(false);
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } else {
+      setIsLocating(false);
+    }
+  };
+
+  // On open: If no valid initialLat is supplied (or 0 / default), automatically acquire live GPS!
+  useEffect(() => {
+    if (visible) {
+      setPlaceLabel(initialName || '');
+
+      const hasCustomCoords =
+        initialLat &&
+        initialLng &&
+        initialLat !== 0 &&
+        initialLng !== 0 &&
+        (initialLat !== 28.6139 || initialLng !== 77.209);
+
+      if (hasCustomCoords) {
+        setSelectedLat(initialLat);
+        setSelectedLng(initialLng);
+        setGpsAcquired(true);
+      } else {
+        // Automatically fetch live GPS location
+        handleUseCurrentLocation();
+      }
+    }
+  }, [visible, initialLat, initialLng, initialName]);
+
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery.trim())}&limit=1`,
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+          searchQuery.trim()
+        )}&limit=1`,
         { headers: { 'User-Agent': 'ExpenseTrackerReminderApp/1.0' } }
       );
       const data = await res.json();
@@ -97,31 +159,15 @@ export function MapPickerModal({
     }
   };
 
-  const handleUseCurrentLocation = () => {
-    if (typeof navigator !== 'undefined' && navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const lat = parseFloat(pos.coords.latitude.toFixed(6));
-          const lng = parseFloat(pos.coords.longitude.toFixed(6));
-          updateMapCenter(lat, lng);
-        },
-        (err) => {
-          alert('Could not access GPS location. Please check browser location permissions.');
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    }
-  };
-
   const handleConfirm = () => {
     onSelectLocation(selectedLat, selectedLng, placeLabel);
     onDismiss();
   };
 
-  // Generate Leaflet Map HTML string statically (only once per modal open)
+  // Generate Leaflet Map HTML string
   const leafletMapHtml = useMemo(() => {
-    const lat = initialLat || 28.6139;
-    const lng = initialLng || 77.2090;
+    const lat = selectedLat || initialLat || 28.6139;
+    const lng = selectedLng || initialLng || 77.209;
     const rad = radius || 10;
 
     return `
@@ -151,12 +197,11 @@ export function MapPickerModal({
         <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
       </head>
       <body>
-        <div id="loading"><div class="spinner"></div>Loading interactive map...</div>
+        <div id="loading"><div class="spinner"></div>Loading interactive map & live GPS...</div>
         <div id="map"></div>
         <script>
           function initMap() {
             if (typeof L === 'undefined') {
-              // Fallback CDN if CDNJS fails
               var script = document.createElement('script');
               script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
               script.onload = runLeaflet;
@@ -182,7 +227,7 @@ export function MapPickerModal({
                 scrollWheelZoom: true
               }).setView([lat, lng], 17);
 
-              // Standard OpenStreetMap Tile Layer with CartoDB fallback
+              // Fast, resilient tile layer with instant CartoDB & OSM fallbacks
               var tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '© OpenStreetMap'
@@ -192,7 +237,7 @@ export function MapPickerModal({
               });
               tileLayer.addTo(map);
 
-              // Custom SVG Marker (no external PNG asset required, prevents 404s inside iframe)
+              // Custom Pin Marker
               var customPinIcon = L.divIcon({
                 className: 'custom-map-pin',
                 html: '<div style="position:relative; width:34px; height:34px; transform:translate(-50%, -100%); cursor:grab;">' +
@@ -245,13 +290,11 @@ export function MapPickerModal({
                 }
               });
 
-              // Multiple invalidateSize passes to guarantee full tile coverage upon modal animation
               setTimeout(function() { map.invalidateSize(); }, 60);
               setTimeout(function() { map.invalidateSize(); }, 200);
               setTimeout(function() { map.invalidateSize(); }, 500);
               window.addEventListener('resize', function() { map.invalidateSize(); });
 
-              // Hide loading indicator
               var loadingEl = document.getElementById('loading');
               if (loadingEl) loadingEl.style.display = 'none';
 
@@ -272,7 +315,7 @@ export function MapPickerModal({
       </body>
       </html>
     `;
-  }, [visible, initialLat, initialLng, radius]);
+  }, [visible]);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -298,7 +341,9 @@ export function MapPickerModal({
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.modalTitle}>Mark Pin Point on Map</Text>
-              <Text style={styles.subtitle}>Tap or drag pin to mark your Hostel, Gate, or Campus</Text>
+              <Text style={styles.subtitle}>
+                {isLocating ? '📡 Acquiring your live GPS...' : 'Tap or drag pin to mark your Gate or Campus'}
+              </Text>
             </View>
           </View>
           <TouchableOpacity onPress={onDismiss} style={styles.closeBtn}>
@@ -318,9 +363,16 @@ export function MapPickerModal({
                 onPress={() => setPlaceLabel(tag.name)}
                 style={[
                   styles.placeChip,
-                  placeLabel === tag.name && { backgroundColor: Colors.secondaryBg, borderColor: Colors.secondary }
+                  placeLabel === tag.name && {
+                    backgroundColor: Colors.secondaryBg,
+                    borderColor: Colors.secondary,
+                  },
                 ]}
-                textStyle={{ fontSize: 11, fontWeight: '700', color: placeLabel === tag.name ? Colors.secondary : Colors.text }}
+                textStyle={{
+                  fontSize: 11,
+                  fontWeight: '700',
+                  color: placeLabel === tag.name ? Colors.secondary : Colors.text,
+                }}
               >
                 {tag.label}
               </Chip>
@@ -342,7 +394,9 @@ export function MapPickerModal({
             activeOutlineColor={Colors.secondary}
             textColor={Colors.text}
             left={<TextInput.Icon icon="magnify" color={Colors.textSecondary} />}
-            theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+            theme={{
+              colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary },
+            }}
           />
           <Button
             mode="contained"
@@ -355,32 +409,27 @@ export function MapPickerModal({
             Search
           </Button>
           <TouchableOpacity
-            style={styles.gpsBtn}
+            style={[styles.gpsBtn, isLocating && { backgroundColor: Colors.warning }]}
             onPress={handleUseCurrentLocation}
             activeOpacity={0.8}
           >
-            <MaterialCommunityIcons name="crosshairs-gps" size={18} color="#FFFFFF" />
+            {isLocating ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <MaterialCommunityIcons name="crosshairs-gps" size={18} color="#FFFFFF" />
+            )}
           </TouchableOpacity>
         </View>
 
         {/* Live Interactive Map Canvas */}
         <View style={styles.mapCanvas}>
-          {Platform.OS === 'web' ? (
-            <iframe
-              ref={iframeRef}
-              key={`map-iframe-${visible ? 'visible' : 'hidden'}`}
-              srcDoc={leafletMapHtml}
-              style={{ width: '100%', height: '100%', minHeight: 320, border: 0 }}
-              title="Interactive Pin Point Map"
-            />
-          ) : (
-            <View style={styles.mobileFallback}>
-              <MaterialCommunityIcons name="map-marker-check" size={54} color={Colors.secondary} />
-              <Text style={styles.coordDisplay}>
-                📍 Lat: {selectedLat.toFixed(6)} | Lng: {selectedLng.toFixed(6)}
-              </Text>
-            </View>
-          )}
+          <iframe
+            ref={iframeRef}
+            key={`map-iframe-${visible ? 'visible' : 'hidden'}`}
+            srcDoc={leafletMapHtml}
+            style={{ width: '100%', height: '100%', minHeight: 320, border: 0 }}
+            title="Interactive Pin Point Map"
+          />
         </View>
 
         {/* Coordinates Readout & Place Tag Bar */}
@@ -393,8 +442,10 @@ export function MapPickerModal({
           </View>
           <View style={styles.infoDivider} />
           <View style={styles.infoItem}>
-            <Text style={styles.infoLabel}>COORDINATES</Text>
-            <Text style={styles.infoValue}>{selectedLat.toFixed(4)}, {selectedLng.toFixed(4)}</Text>
+            <Text style={styles.infoLabel}>LIVE GPS COORDS</Text>
+            <Text style={styles.infoValue}>
+              {selectedLat.toFixed(4)}, {selectedLng.toFixed(4)}
+            </Text>
           </View>
           <View style={styles.infoDivider} />
           <View style={styles.infoItem}>
@@ -405,7 +456,12 @@ export function MapPickerModal({
 
         {/* Action Buttons */}
         <View style={styles.actions}>
-          <Button mode="outlined" onPress={onDismiss} textColor={Colors.textSecondary} style={styles.btn}>
+          <Button
+            mode="outlined"
+            onPress={onDismiss}
+            textColor={Colors.textSecondary}
+            style={styles.btn}
+          >
             Cancel
           </Button>
           <Button
@@ -437,9 +493,21 @@ const styles = StyleSheet.create({
     maxHeight: '92%',
     ...Shadows.large,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.xs },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
+  },
   headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, flex: 1 },
-  iconCircle: { width: 38, height: 38, borderRadius: 12, backgroundColor: Colors.secondaryBg, justifyContent: 'center', alignItems: 'center' },
+  iconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: Colors.secondaryBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   modalTitle: { fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.text },
   subtitle: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary },
   closeBtn: { padding: 4 },
@@ -467,8 +535,6 @@ const styles = StyleSheet.create({
     marginVertical: Spacing.xs,
     backgroundColor: '#E2E8F0',
   },
-  mobileFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: Spacing.lg },
-  coordDisplay: { fontSize: Fonts.sizes.sm, fontWeight: '700', color: Colors.text, marginTop: Spacing.sm },
   infoBar: {
     flexDirection: 'row',
     backgroundColor: Colors.background,
@@ -482,6 +548,11 @@ const styles = StyleSheet.create({
   infoLabel: { fontSize: 9, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.5 },
   infoValue: { fontSize: Fonts.sizes.xs, fontWeight: '800', color: Colors.text, marginTop: 2 },
   infoDivider: { width: 1, height: '100%', backgroundColor: Colors.border },
-  actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.sm, marginTop: Spacing.xs },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
   btn: { borderRadius: BorderRadius.md },
 });
