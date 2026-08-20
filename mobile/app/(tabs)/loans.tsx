@@ -126,12 +126,12 @@ export default function LoansScreen() {
     if (loan) {
       setEditingLoanId(loan.id);
       setLoanType(loan.type);
-      setPersonName(loan.person_name || '');
-      setPersonPhone(loan.person_phone || '');
-      setAmount(String(loan.amount || ''));
+      setPersonName(loan.person_name !== undefined && loan.person_name !== null ? String(loan.person_name) : '');
+      setPersonPhone(loan.person_phone !== undefined && loan.person_phone !== null ? String(loan.person_phone) : '');
+      setAmount(String(loan.amount !== undefined && loan.amount !== null ? loan.amount : ''));
       setDate(formatToDDMMYYYY(loan.date));
       setDueDate(loan.due_date ? formatToDDMMYYYY(loan.due_date) : '');
-      setNote(loan.note || '');
+      setNote(loan.note !== undefined && loan.note !== null ? String(loan.note) : '');
       setAutoNotify(loan.auto_notify === 1);
     } else {
       setEditingLoanId(null);
@@ -148,7 +148,7 @@ export default function LoansScreen() {
   };
 
   const handleSaveLoan = async () => {
-    const trimmedName = (personName || '').trim();
+    const trimmedName = String(personName || '').trim();
     if (!trimmedName) {
       showMessage('Validation Error', 'Please enter the person\'s name', 'error');
       return;
@@ -160,6 +160,7 @@ export default function LoansScreen() {
     }
 
     const cleanPhone = personPhone ? String(personPhone).replace(/[^\d+]/g, '') : '';
+    const safeNote = note !== undefined && note !== null && String(note).trim() !== '' ? String(note).trim() : undefined;
 
     setSaving(true);
     try {
@@ -177,7 +178,7 @@ export default function LoansScreen() {
           existing?.amount_repaid || 0,
           isoDate,
           isoDueDate,
-          note || undefined
+          safeNote
         );
         showMessage('Record Updated', 'Loan details updated successfully', 'success');
       } else {
@@ -188,7 +189,7 @@ export default function LoansScreen() {
           cleanAmount,
           isoDate,
           isoDueDate,
-          note || undefined,
+          safeNote,
           autoNotify
         );
 

@@ -73,21 +73,24 @@ export function useLoans() {
     ): Promise<{ loanId: number; messageSent: boolean }> => {
       if (!db || !user) return { loanId: 0, messageSent: false };
 
+      const cleanName = String(personName || '').trim();
       const cleanPhone = personPhone ? String(personPhone).replace(/[^\d+]/g, '') : '';
       const numAmount = typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 0;
+      const safeNote = note !== undefined && note !== null && String(note).trim() !== '' ? String(note).trim() : null;
+      const safeDueDate = dueDate !== undefined && dueDate !== null && String(dueDate).trim() !== '' ? String(dueDate).trim() : null;
 
       const res = await db.runAsync(
         `INSERT INTO loans (user_id, person_name, person_phone, type, amount, amount_repaid, date, due_date, note, status, auto_notify) 
          VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, 'pending', ?)`,
         [
           user.uid,
-          (personName || '').trim(),
+          cleanName,
           cleanPhone,
           type,
           numAmount,
           date,
-          dueDate || null,
-          note?.trim() || null,
+          safeDueDate,
+          safeNote,
           autoNotify ? 1 : 0,
         ]
       );
@@ -101,19 +104,19 @@ export function useLoans() {
       if (autoNotify && cleanPhone) {
         try {
           const messageText = createLoanAcknowledgmentMessage({
-            personName: (personName || '').trim(),
+            personName: cleanName,
             type,
             amount: numAmount,
             amountRepaid: 0,
             date,
-            dueDate,
-            note,
+            dueDate: safeDueDate,
+            note: safeNote,
             userName: formatSenderName(user?.email ? user.email.split('@')[0] : 'Shivansh'),
           });
 
           await whatsappApi.sendMessage(
             [{ phone: cleanPhone, isGroup: false }],
-            personName,
+            cleanName,
             undefined,
             messageText
           );
@@ -122,7 +125,7 @@ export function useLoans() {
           await db.runAsync(
             `INSERT INTO message_logs (user_id, location_id, contact_id, location_name, recipient_name, recipient_phone, message_content, status) 
              VALUES (?, NULL, NULL, ?, ?, ?, ?, 'sent')`,
-            [user.uid, type === 'lent' ? 'Loan Given' : 'Loan Received', personName, cleanPhone, messageText]
+            [user.uid, type === 'lent' ? 'Loan Given' : 'Loan Received', cleanName, cleanPhone, messageText]
           );
 
           messageSent = true;
@@ -154,9 +157,12 @@ export function useLoans() {
     ) => {
       if (!db || !user) return;
 
+      const cleanName = String(personName || '').trim();
       const cleanPhone = personPhone ? String(personPhone).replace(/[^\d+]/g, '') : '';
       const numAmount = typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/[^0-9.]/g, '')) || 0;
       const numRepaid = typeof amountRepaid === 'number' ? amountRepaid : parseFloat(String(amountRepaid).replace(/[^0-9.]/g, '')) || 0;
+      const safeNote = note !== undefined && note !== null && String(note).trim() !== '' ? String(note).trim() : null;
+      const safeDueDate = dueDate !== undefined && dueDate !== null && String(dueDate).trim() !== '' ? String(dueDate).trim() : null;
 
       const calcStatus =
         status ||
@@ -166,14 +172,14 @@ export function useLoans() {
         `UPDATE loans SET person_name = ?, person_phone = ?, type = ?, amount = ?, amount_repaid = ?, date = ?, due_date = ?, note = ?, status = ? 
          WHERE id = ? AND user_id = ?`,
         [
-          (personName || '').trim(),
+          cleanName,
           cleanPhone,
           type,
           numAmount,
           numRepaid,
           date,
-          dueDate || null,
-          note?.trim() || null,
+          safeDueDate,
+          safeNote,
           calcStatus,
           id,
           user.uid,
