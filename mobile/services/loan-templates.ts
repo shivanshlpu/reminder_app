@@ -23,10 +23,21 @@ export function formatINR(amount: number): string {
 }
 
 /**
+ * Formats sender display name (defaults to "Shivansh" and strips numeric handles)
+ */
+export function formatSenderName(userName?: string): string {
+  if (!userName || userName === 'Me') return 'Shivansh';
+  if (userName.toLowerCase().includes('shivansh')) return 'Shivansh';
+  const cleaned = userName.replace(/[0-9_.-]/g, '').trim();
+  if (cleaned.length > 0) return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  return 'Shivansh';
+}
+
+/**
  * 1. Initial Loan / Credit Acknowledgment (Sent automatically upon entry)
  */
 export function createLoanAcknowledgmentMessage(data: LoanMessageData): string {
-  const sender = data.userName || 'Me';
+  const sender = formatSenderName(data.userName);
   const remaining = (data.amount || 0) - (data.amountRepaid || 0);
   const formattedDate = formatToDDMMYYYY(data.date);
   const formattedDueDate = data.dueDate ? formatToDDMMYYYY(data.dueDate) : null;
@@ -44,6 +55,7 @@ export function createLoanAcknowledgmentMessage(data: LoanMessageData): string {
       ``,
       `_Kindly keep this message for your personal records._`,
       `Thank you!`,
+      `— *${sender}*`,
     ]
       .filter((line) => line !== null)
       .join('\n');
@@ -60,6 +72,7 @@ export function createLoanAcknowledgmentMessage(data: LoanMessageData): string {
     formattedDueDate ? `📅 *Agreed Repayment Date:* ${formattedDueDate}` : null,
     ``,
     `_I will ensure timely repayment as agreed. Thank you for your support!_`,
+    `— *${sender}*`,
   ]
     .filter((line) => line !== null)
     .join('\n');
@@ -74,7 +87,7 @@ export function createLoanReminderMessage(
   data: LoanMessageData,
   style: ReminderStyle = 'friendly'
 ): string {
-  const sender = data.userName || 'Me';
+  const sender = formatSenderName(data.userName);
   const remaining = (data.amount || 0) - (data.amountRepaid || 0);
   const formattedDate = formatToDDMMYYYY(data.date);
   const formattedDueDate = data.dueDate ? formatToDDMMYYYY(data.dueDate) : null;
@@ -138,7 +151,7 @@ export function createRepaymentReceiptMessage(
   data: LoanMessageData,
   repaymentAmount: number
 ): string {
-  const sender = data.userName || 'Me';
+  const sender = formatSenderName(data.userName);
   const prevRemaining = (data.amount || 0) - (data.amountRepaid || 0);
   const newRemaining = Math.max(0, prevRemaining - repaymentAmount);
   const isSettled = newRemaining <= 0;

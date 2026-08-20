@@ -2,7 +2,9 @@
  * Locations & Message Rules Screen
  * - Interactive Pin-Point Map Selection (Leaflet OpenStreetMap)
  * - Custom Message Editor with Quick Templates for College, Hostel, Home, Gym, Library
- * - Per-Contact Custom Message Assignment & 10m Gate Geofencing
+ * - Per-Location 24-Hour Reset Timing (12:00 PM Home vs 12:00 AM College)
+ * - Weekend / Active Days Selector (e.g. Exclude Sat & Sun for College)
+ * - Per-Contact Custom Message Assignment & Gate Geofencing
  * - In-App Floating Toast Notifications for all actions
  */
 import React, { useState, useEffect, useCallback } from 'react';
@@ -32,6 +34,8 @@ import {
   loadDailyTriggers,
   recordLocationTriggeredToday,
   resetLocationDailyTrigger,
+  isLocationActiveOnDay,
+  getLocationCycleKey,
 } from '../../services/geofence';
 import { MapPickerModal } from '../../components/MapPickerModal';
 import { GeofenceRadarBanner } from '../../components/GeofenceRadarBanner';
@@ -39,13 +43,59 @@ import { confirmAction, showMessage } from '../../utils/dialogs';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
+const ALL_DAYS = [
+  { key: 'mon', label: 'Mon', full: 'Monday' },
+  { key: 'tue', label: 'Tue', full: 'Tuesday' },
+  { key: 'wed', label: 'Wed', full: 'Wednesday' },
+  { key: 'thu', label: 'Thu', full: 'Thursday' },
+  { key: 'fri', label: 'Fri', full: 'Friday' },
+  { key: 'sat', label: 'Sat', full: 'Saturday' },
+  { key: 'sun', label: 'Sun', full: 'Sunday' },
+];
+
+const RESET_TIME_OPTIONS = [
+  { value: '12:00 PM', label: '☀️ 12:00 PM (Noon - Home)', desc: 'Resets at noon. Will NOT reset at midnight 12 AM while sleeping at home!' },
+  { value: '12:00 AM', label: '🌙 12:00 AM (Midnight - College)', desc: 'Resets overnight for morning college arrivals' },
+  { value: '06:00 AM', label: '🌅 06:00 AM (Morning)', desc: 'Resets early morning before heading out' },
+];
+
 const PRESET_TEMPLATES = [
-  { label: '🎓 College Arrival', template: 'Hey, I have safely reached college for morning lectures at {time}.' },
-  { label: '🏢 Hostel Room', template: 'Reached hostel room at {time}. Calling you shortly!' },
-  { label: '🚪 Hostel Gate', template: 'Reached hostel main gate at {time}.' },
-  { label: '🏠 Home Arrival', template: 'Reached home safely at {time}.' },
-  { label: '🍽️ Cafeteria / Lunch', template: 'At college canteen having lunch at {time}.' },
-  { label: '📚 Library Study', template: 'Reached library at {time} for study session.' },
+  {
+    label: '🎓 College Arrival',
+    template: 'Hey, I have safely reached college for lectures at {time}.',
+    defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri'], // Weekdays only
+    defaultReset: '12:00 AM',
+  },
+  {
+    label: '🏠 Home Arrival',
+    template: 'Reached home safely at {time}.',
+    defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+    defaultReset: '12:00 PM', // 12 PM Noon reset
+  },
+  {
+    label: '🏢 Hostel Room',
+    template: 'Reached hostel room at {time}. Calling you shortly!',
+    defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+    defaultReset: '12:00 PM',
+  },
+  {
+    label: '🚪 Hostel Gate',
+    template: 'Reached hostel main gate at {time}.',
+    defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+    defaultReset: '12:00 PM',
+  },
+  {
+    label: '🍽️ Cafeteria / Lunch',
+    template: 'At college canteen having lunch at {time}.',
+    defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+    defaultReset: '12:00 AM',
+  },
+  {
+    label: '📚 Library Study',
+    template: 'Reached library at {time} for study session.',
+    defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'],
+    defaultReset: '12:00 AM',
+  },
 ];
 
 export default function LocationsScreen() {
@@ -68,6 +118,9 @@ export default function LocationsScreen() {
   const [longitude, setLongitude] = useState('');
   const [radius, setRadius] = useState('10');
   const [messageTemplate, setMessageTemplate] = useState('Reached {location} at {time}.');
+  const [selectedDays, setSelectedDays] = useState<string[]>(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+  const [resetTime, setResetTime] = useState('12:00 AM');
+
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [gettingLocation, setGettingLocation] = useState(false);
@@ -101,6 +154,8 @@ export default function LocationsScreen() {
             radius: loc.radius || 10,
             autoSend: loc.auto_send === 1,
             messageTemplate: loc.message_template,
+            activeDays: loc.active_days || 'mon,tue,wed,thu,fri,sat,sun',
+            resetTime: loc.reset_time || '12:00 AM',
             contacts: (assigned || []).map((c) => ({
               phone: c.phone,
               isGroup: c.is_group === 1,
@@ -148,6 +203,9 @@ export default function LocationsScreen() {
       setLongitude(loc.longitude.toString());
       setRadius((loc.radius || 10).toString());
       setMessageTemplate(loc.message_template || 'Reached {location} at {time}.');
+      const days = loc.active_days ? loc.active_days.split(',').map((d) => d.trim().toLowerCase()) : ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      setSelectedDays(days);
+      setResetTime(loc.reset_time || (loc.name.toLowerCase().includes('home') ? '12:00 PM' : '12:00 AM'));
     } else {
       setEditingLocId(null);
       setLocationName('');
@@ -155,6 +213,8 @@ export default function LocationsScreen() {
       setLongitude('');
       setRadius('10');
       setMessageTemplate('Reached {location} at {time}.');
+      setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+      setResetTime('12:00 AM');
     }
     setShowAddModal(true);
   };
@@ -174,12 +234,17 @@ export default function LocationsScreen() {
     setShowMapPicker(true);
   };
 
-
   const handleMapPinSelected = (lat: number, lng: number, placeName?: string) => {
     setLatitude(lat.toFixed(6));
     setLongitude(lng.toFixed(6));
     if (placeName && placeName.trim()) {
       setLocationName(placeName.trim());
+      if (placeName.toLowerCase().includes('home')) {
+        setResetTime('12:00 PM');
+      } else if (placeName.toLowerCase().includes('college')) {
+        setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri']);
+        setResetTime('12:00 AM');
+      }
     }
     setShowMapPicker(false);
     setShowAddModal(true);
@@ -216,23 +281,71 @@ export default function LocationsScreen() {
     }
   };
 
+  const toggleDaySelection = (dayKey: string) => {
+    setSelectedDays((prev) => {
+      if (prev.includes(dayKey)) {
+        if (prev.length === 1) {
+          showMessage('Keep 1 Day', 'At least one active day is required.', 'info');
+          return prev;
+        }
+        return prev.filter((d) => d !== dayKey);
+      } else {
+        return [...prev, dayKey];
+      }
+    });
+  };
+
+  const applyPresetTemplate = (item: typeof PRESET_TEMPLATES[0]) => {
+    setMessageTemplate(item.template);
+    if (item.defaultDays) {
+      setSelectedDays(item.defaultDays);
+    }
+    if (item.defaultReset) {
+      setResetTime(item.defaultReset);
+    }
+    if (!locationName || locationName === 'Hostel Gate' || locationName === 'College' || locationName === 'Home') {
+      if (item.label.includes('College')) setLocationName('College Gate');
+      else if (item.label.includes('Home')) setLocationName('Home');
+      else if (item.label.includes('Hostel')) setLocationName('Hostel Gate');
+    }
+    showMessage('Template Selected', `Applied preset: ${item.label}`, 'info');
+  };
+
   const handleSave = async () => {
     const trimmedName = locationName.trim();
     if (!trimmedName) {
-      showMessage('Missing Name', 'Please enter a location name (e.g. "Hostel Gate", "College")', 'error');
+      showMessage('Missing Name', 'Please enter a location name (e.g. "Hostel Gate", "College", "Home")', 'error');
       return;
     }
     const lat = parseFloat(latitude) || 28.6139;
     const lng = parseFloat(longitude) || 77.2090;
+    const daysStr = selectedDays.join(',');
+    const resetTimeStr = resetTime || '12:00 AM';
 
     setSaving(true);
     try {
       if (editingLocId) {
-        await updateLocation(editingLocId, trimmedName, parseInt(radius) || 10, true, messageTemplate);
-        showMessage('Location Updated', `Saved "${trimmedName}" with ${radius}m gate radius`, 'success');
+        await updateLocation(
+          editingLocId,
+          trimmedName,
+          parseInt(radius) || 10,
+          true,
+          messageTemplate,
+          daysStr,
+          resetTimeStr
+        );
+        showMessage('Location Updated', `Saved "${trimmedName}" (Resets ${resetTimeStr})`, 'success');
       } else {
-        await addLocation(trimmedName, lat, lng, parseInt(radius) || 10, messageTemplate);
-        showMessage('Location Pinned', `Pinned "${trimmedName}" with 10m gate precision`, 'success');
+        await addLocation(
+          trimmedName,
+          lat,
+          lng,
+          parseInt(radius) || 10,
+          messageTemplate,
+          daysStr,
+          resetTimeStr
+        );
+        showMessage('Location Pinned', `Pinned "${trimmedName}" with ${selectedDays.length} active day(s)`, 'success');
       }
       setShowAddModal(false);
     } catch (error: any) {
@@ -256,7 +369,9 @@ export default function LocationsScreen() {
       loc.name,
       loc.radius,
       nextState,
-      loc.message_template
+      loc.message_template,
+      loc.active_days || 'mon,tue,wed,thu,fri,sat,sun',
+      loc.reset_time || '12:00 AM'
     );
     showMessage(
       nextState ? 'Auto-Send Enabled' : 'Auto-Send Disabled',
@@ -309,7 +424,7 @@ export default function LocationsScreen() {
           }
         }
 
-        await recordLocationTriggeredToday(loc.id);
+        await recordLocationTriggeredToday(loc.id, loc.reset_time);
         const updated = await loadDailyTriggers();
         setDailyTriggerMap({ ...updated });
 
@@ -319,7 +434,7 @@ export default function LocationsScreen() {
           'whatsapp'
         );
       } else {
-        await recordLocationTriggeredToday(loc.id);
+        await recordLocationTriggeredToday(loc.id, loc.reset_time);
         const updated = await loadDailyTriggers();
         setDailyTriggerMap({ ...updated });
         showMessage('Alert Dispatched', 'Message queued to WhatsApp service', 'info');
@@ -335,7 +450,7 @@ export default function LocationsScreen() {
     await resetLocationDailyTrigger(loc.id);
     const updated = await loadDailyTriggers();
     setDailyTriggerMap({ ...updated });
-    showMessage('Daily Alert Reset', `"${loc.name}" can auto-trigger once more today`, 'info');
+    showMessage('Alert Cycle Reset', `"${loc.name}" can auto-trigger once more in this cycle`, 'info');
   };
 
   const onRefresh = async () => {
@@ -351,14 +466,34 @@ export default function LocationsScreen() {
     setMessageTemplate((prev) => `${prev} ${tag}`);
   };
 
+  const formatDaysSummary = (activeDaysStr?: string) => {
+    if (!activeDaysStr) return 'All 7 Days';
+    const days = activeDaysStr.split(',').map((d) => d.trim().toLowerCase());
+    if (days.length === 7) return 'All 7 Days';
+    if (days.length === 5 && !days.includes('sat') && !days.includes('sun')) {
+      return 'Mon–Fri (No Weekends)';
+    }
+    if (days.length === 2 && days.includes('sat') && days.includes('sun')) {
+      return 'Weekends Only';
+    }
+    return days.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(', ');
+  };
+
   const renderLocationCard = (item: PinnedLocation) => {
-    const isTriggeredToday = dailyTriggerMap[item.id] === getTodayDateString();
+    const cycleKey = getLocationCycleKey(item.reset_time);
+    const isTriggeredInCycle = dailyTriggerMap[item.id] === cycleKey;
+    const isActiveToday = isLocationActiveOnDay(item.active_days);
+    const daysSummary = formatDaysSummary(item.active_days);
 
     return (
       <View key={item.id} style={[styles.locationCard, isWide && styles.locationCardDesktop]}>
         <View style={styles.locationHeader}>
           <View style={styles.locationIconWrap}>
-            <MaterialCommunityIcons name="map-marker-radius" size={24} color={Colors.secondary} />
+            <MaterialCommunityIcons
+              name={item.name.toLowerCase().includes('home') ? 'home-map-marker' : 'map-marker-radius'}
+              size={24}
+              color={Colors.secondary}
+            />
           </View>
           <View style={styles.locationInfo}>
             <Text style={styles.locationName}>{item.name}</Text>
@@ -374,22 +509,56 @@ export default function LocationsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* 1-Per-Day Trigger Status Indicator */}
+        {/* Configuration Summary Pills */}
+        <View style={styles.configPillsRow}>
+          <View style={styles.configPill}>
+            <MaterialCommunityIcons name="calendar-week" size={13} color={Colors.secondary} />
+            <Text style={styles.configPillText}>{daysSummary}</Text>
+          </View>
+          <View style={styles.configPill}>
+            <MaterialCommunityIcons name="clock-outline" size={13} color={Colors.secondary} />
+            <Text style={styles.configPillText}>Resets {item.reset_time || '12:00 AM'}</Text>
+          </View>
+        </View>
+
+        {/* Cycle & Day Trigger Status Indicator */}
         <View style={styles.dailyStatusRow}>
-          <View style={[styles.dailyStatusBadge, isTriggeredToday ? styles.dailyStatusBadgeSent : styles.dailyStatusBadgeReady]}>
+          <View
+            style={[
+              styles.dailyStatusBadge,
+              !isActiveToday
+                ? styles.dailyStatusBadgeInactive
+                : isTriggeredInCycle
+                ? styles.dailyStatusBadgeSent
+                : styles.dailyStatusBadgeReady,
+            ]}
+          >
             <MaterialCommunityIcons
-              name={isTriggeredToday ? "check-decagram" : "clock-check-outline"}
+              name={!isActiveToday ? 'pause-circle-outline' : isTriggeredInCycle ? 'check-decagram' : 'clock-check-outline'}
               size={14}
-              color={isTriggeredToday ? Colors.success : Colors.secondary}
+              color={!isActiveToday ? '#B45309' : isTriggeredInCycle ? Colors.success : Colors.secondary}
             />
-            <Text style={[styles.dailyStatusText, isTriggeredToday ? { color: Colors.success } : { color: Colors.secondary }]}>
-              {isTriggeredToday ? 'Sent Today (1/1 Auto-Alert Done)' : '1-Per-Day Ready (0/1 Auto-Alert)'}
+            <Text
+              style={[
+                styles.dailyStatusText,
+                !isActiveToday
+                  ? { color: '#B45309' }
+                  : isTriggeredInCycle
+                  ? { color: Colors.success }
+                  : { color: Colors.secondary },
+              ]}
+            >
+              {!isActiveToday
+                ? 'Inactive Today (Weekend / Off-day)'
+                : isTriggeredInCycle
+                ? 'Sent in this 24h Cycle (1/1 Done)'
+                : '24h Cycle Ready (0/1 Auto-Alert)'}
             </Text>
           </View>
-          {isTriggeredToday && (
+          {isTriggeredInCycle && (
             <TouchableOpacity onPress={() => handleResetDailyTrigger(item)} style={styles.resetDailyBtn}>
               <MaterialCommunityIcons name="refresh" size={13} color={Colors.textSecondary} />
-              <Text style={styles.resetDailyText}>Reset Today</Text>
+              <Text style={styles.resetDailyText}>Reset</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -451,9 +620,11 @@ export default function LocationsScreen() {
           <View style={styles.emptyState}>
             <MaterialCommunityIcons name="map-marker-plus-outline" size={54} color={Colors.textMuted} />
             <Text style={styles.emptyText}>No locations pinned</Text>
-            <Text style={styles.emptySubtext}>Pin your Hostel, College, or Home with 10-meter gate precision to auto-send customized WhatsApp messages</Text>
+            <Text style={styles.emptySubtext}>
+              Pin your College, Home, or Hostel with 10-meter gate precision, custom active days, and 24-hour reset cycles.
+            </Text>
             <Button mode="contained" buttonColor={Colors.secondary} onPress={() => openAddModal()} style={{ marginTop: Spacing.md }}>
-              + Pin "Hostel Gate" (10m)
+              + Pin "College Gate" / "Home"
             </Button>
           </View>
         ) : (
@@ -476,14 +647,13 @@ export default function LocationsScreen() {
         radius={parseInt(radius) || 10}
       />
 
-
       {/* Add / Edit Location & Custom Message Rules Modal */}
       <Portal>
         <Modal visible={showAddModal} onDismiss={() => setShowAddModal(false)} contentContainerStyle={styles.modal}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>
-                {editingLocId ? 'Edit Location & Message' : 'Pin Location & Set Custom Message'}
+                {editingLocId ? 'Edit Location & Rules' : 'Pin Location & Message Rules'}
               </Text>
 
               <TextInput
@@ -491,7 +661,7 @@ export default function LocationsScreen() {
                 value={locationName}
                 onChangeText={setLocationName}
                 mode="outlined"
-                placeholder='e.g. "Hostel Gate", "College Campus", "Home"'
+                placeholder='e.g. "College Campus", "Home", "Hostel Gate"'
                 left={<TextInput.Icon icon="map-marker-outline" color={Colors.textSecondary} />}
                 style={styles.modalInput}
                 outlineColor={Colors.border}
@@ -565,14 +735,109 @@ export default function LocationsScreen() {
                 />
               </View>
 
-              {/* Quick Message Templates Section */}
-              <Text style={styles.templatesLabel}>Choose or Customize Message Template:</Text>
+              {/* SECTION: Active Days & Weekend Filter */}
+              <View style={styles.sectionDivider} />
+              <View style={styles.sectionHeaderRow}>
+                <MaterialCommunityIcons name="calendar-check" size={18} color={Colors.secondary} />
+                <Text style={styles.sectionLabel}>Active Days (When Messages Can Send):</Text>
+              </View>
+              <Text style={styles.sectionSubtext}>
+                Uncheck Saturday & Sunday for College so messages won't send on weekends.
+              </Text>
+
+              {/* Quick Day Presets */}
+              <View style={styles.quickDayRow}>
+                <TouchableOpacity
+                  style={[styles.quickDayBtn, selectedDays.length === 5 && !selectedDays.includes('sat') && !selectedDays.includes('sun') && styles.quickDayBtnActive]}
+                  onPress={() => setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri'])}
+                >
+                  <Text style={[styles.quickDayBtnText, selectedDays.length === 5 && !selectedDays.includes('sat') && !selectedDays.includes('sun') && styles.quickDayBtnTextActive]}>
+                    💼 Weekdays Only (Mon-Fri)
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.quickDayBtn, selectedDays.length === 7 && styles.quickDayBtnActive]}
+                  onPress={() => setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])}
+                >
+                  <Text style={[styles.quickDayBtnText, selectedDays.length === 7 && styles.quickDayBtnTextActive]}>
+                    🌟 All 7 Days
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Day selection chips */}
+              <View style={styles.daysChipsGrid}>
+                {ALL_DAYS.map((d) => {
+                  const isSelected = selectedDays.includes(d.key);
+                  const isWeekend = d.key === 'sat' || d.key === 'sun';
+                  return (
+                    <TouchableOpacity
+                      key={d.key}
+                      style={[
+                        styles.dayChip,
+                        isSelected ? styles.dayChipSelected : styles.dayChipUnselected,
+                        isWeekend && isSelected ? styles.dayChipWeekend : undefined,
+                      ]}
+                      onPress={() => toggleDaySelection(d.key)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.dayChipText, isSelected ? styles.dayChipTextSelected : styles.dayChipTextUnselected]}>
+                        {d.label}
+                      </Text>
+                      {isSelected && (
+                        <MaterialCommunityIcons name="check" size={12} color="#FFFFFF" style={{ marginLeft: 2 }} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* SECTION: 24-Hour Reset Timing */}
+              <View style={styles.sectionDivider} />
+              <View style={styles.sectionHeaderRow}>
+                <MaterialCommunityIcons name="clock-time-four-outline" size={18} color={Colors.secondary} />
+                <Text style={styles.sectionLabel}>24-Hour Reset Schedule:</Text>
+              </View>
+              <Text style={styles.sectionSubtext}>
+                Set Home to 12:00 PM (Noon) so it won't reset at 12:00 AM midnight while you are already at home.
+              </Text>
+
+              <View style={styles.resetOptionsContainer}>
+                {RESET_TIME_OPTIONS.map((opt) => {
+                  const isSelected = resetTime === opt.value;
+                  return (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={[styles.resetOptionCard, isSelected && styles.resetOptionCardSelected]}
+                      onPress={() => setResetTime(opt.value)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.resetOptionHeader}>
+                        <MaterialCommunityIcons
+                          name={isSelected ? 'radiobox-marked' : 'radiobox-blank'}
+                          size={18}
+                          color={isSelected ? Colors.secondary : Colors.textMuted}
+                        />
+                        <Text style={[styles.resetOptionLabel, isSelected && styles.resetOptionLabelSelected]}>
+                          {opt.label}
+                        </Text>
+                      </View>
+                      <Text style={styles.resetOptionDesc}>{opt.desc}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* SECTION: Message Templates */}
+              <View style={styles.sectionDivider} />
+              <Text style={styles.templatesLabel}>Choose Quick Message Preset:</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templateChipsScroll}>
                 {PRESET_TEMPLATES.map((item, idx) => (
                   <Chip
                     key={idx}
                     mode="outlined"
-                    onPress={() => setMessageTemplate(item.template)}
+                    onPress={() => applyPresetTemplate(item)}
                     style={styles.templateChip}
                     textStyle={{ fontSize: 11, fontWeight: '600' }}
                   >
@@ -616,7 +881,7 @@ export default function LocationsScreen() {
                   Cancel
                 </Button>
                 <Button mode="contained" onPress={handleSave} loading={saving} disabled={saving} buttonColor={Colors.secondary} style={styles.modalBtn}>
-                  {editingLocId ? 'Update Location & Message' : 'Pin Location & Save'}
+                  {editingLocId ? 'Update Location & Rules' : 'Pin Location & Save'}
                 </Button>
               </View>
             </ScrollView>
@@ -681,7 +946,7 @@ const styles = StyleSheet.create({
     width: '48.5%',
     marginBottom: 0,
   },
-  locationHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.md },
+  locationHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: Spacing.sm },
   locationIconWrap: {
     width: 44, height: 44, borderRadius: 14,
     backgroundColor: Colors.secondaryBg,
@@ -692,6 +957,28 @@ const styles = StyleSheet.create({
   locationCoords: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, marginTop: 2 },
   editBtn: { padding: 6, marginRight: 2 },
   deleteBtn: { padding: 6 },
+  configPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: Spacing.sm,
+  },
+  configPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.background,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  configPillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
   dailyStatusRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -712,6 +999,9 @@ const styles = StyleSheet.create({
   },
   dailyStatusBadgeReady: {
     backgroundColor: Colors.secondaryBg,
+  },
+  dailyStatusBadgeInactive: {
+    backgroundColor: '#FEF3C7', // light amber
   },
   dailyStatusText: {
     fontSize: 11,
@@ -745,8 +1035,8 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: Fonts.sizes.lg, color: Colors.text, fontWeight: '700' },
   emptySubtext: { fontSize: Fonts.sizes.sm, color: Colors.textMuted, textAlign: 'center', paddingHorizontal: Spacing.xxl },
   fab: { position: 'absolute', right: Spacing.lg, bottom: Spacing.lg, backgroundColor: Colors.secondary, borderRadius: 28, ...Shadows.large },
-  modal: { backgroundColor: Colors.surface, margin: Spacing.md, maxWidth: 580, maxHeight: '85%', alignSelf: 'center', width: '92%', borderRadius: BorderRadius.xl, padding: Spacing.lg },
-  modalTitle: { fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.text, marginBottom: Spacing.md },
+  modal: { backgroundColor: Colors.surface, margin: Spacing.md, maxWidth: 600, maxHeight: '88%', alignSelf: 'center', width: '94%', borderRadius: BorderRadius.xl, padding: Spacing.lg },
+  modalTitle: { fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.text, marginBottom: Spacing.xs },
   modalSubtitle: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginBottom: Spacing.sm },
   contactCheckRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
   contactRowName: { fontSize: Fonts.sizes.md, fontWeight: '600', color: Colors.text },
@@ -755,6 +1045,104 @@ const styles = StyleSheet.create({
   mapButtonsRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
   pickerBtn: { borderRadius: BorderRadius.md },
   coordRow: { flexDirection: 'row', gap: Spacing.sm },
+  sectionDivider: { height: 1, backgroundColor: Colors.borderLight, marginVertical: Spacing.md },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  sectionLabel: { fontSize: 13, fontWeight: '800', color: Colors.text },
+  sectionSubtext: { fontSize: 11, color: Colors.textSecondary, marginBottom: Spacing.sm },
+  quickDayRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
+  quickDayBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+  },
+  quickDayBtnActive: {
+    borderColor: Colors.secondary,
+    backgroundColor: Colors.secondaryBg,
+  },
+  quickDayBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  quickDayBtnTextActive: {
+    color: Colors.secondary,
+  },
+  daysChipsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: Spacing.md,
+  },
+  dayChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  dayChipSelected: {
+    backgroundColor: Colors.secondary,
+    borderColor: Colors.secondary,
+  },
+  dayChipWeekend: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
+  },
+  dayChipUnselected: {
+    backgroundColor: Colors.background,
+    borderColor: Colors.border,
+  },
+  dayChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dayChipTextSelected: {
+    color: '#FFFFFF',
+  },
+  dayChipTextUnselected: {
+    color: Colors.textSecondary,
+  },
+  resetOptionsContainer: {
+    gap: 8,
+    marginBottom: Spacing.md,
+  },
+  resetOptionCard: {
+    padding: 10,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  resetOptionCardSelected: {
+    borderColor: Colors.secondary,
+    backgroundColor: Colors.secondaryBg,
+  },
+  resetOptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 2,
+  },
+  resetOptionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  resetOptionLabelSelected: {
+    color: Colors.secondary,
+  },
+  resetOptionDesc: {
+    fontSize: 10,
+    color: Colors.textSecondary,
+    marginLeft: 26,
+  },
   templatesLabel: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary, marginBottom: Spacing.xs },
   templateChipsScroll: { flexDirection: 'row', marginBottom: Spacing.md },
   templateChip: { marginRight: Spacing.xs, backgroundColor: Colors.background },

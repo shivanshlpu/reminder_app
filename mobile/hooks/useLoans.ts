@@ -9,6 +9,7 @@ import {
   createLoanAcknowledgmentMessage,
   createLoanReminderMessage,
   createRepaymentReceiptMessage,
+  formatSenderName,
   ReminderStyle,
 } from '../services/loan-templates';
 
@@ -107,7 +108,7 @@ export function useLoans() {
             date,
             dueDate,
             note,
-            userName: user.email ? user.email.split('@')[0] : 'Me',
+            userName: formatSenderName(user?.email ? user.email.split('@')[0] : 'Shivansh'),
           });
 
           await whatsappApi.sendMessage(
@@ -231,7 +232,7 @@ export function useLoans() {
               date: loan.date,
               dueDate: loan.due_date,
               note: loan.note,
-              userName: user.email ? user.email.split('@')[0] : 'Me',
+              userName: formatSenderName(user?.email ? user.email.split('@')[0] : 'Shivansh'),
             },
             repaymentAmount
           );
@@ -287,7 +288,7 @@ export function useLoans() {
           date: loan.date,
           dueDate: loan.due_date,
           note: loan.note,
-          userName: user.email ? user.email.split('@')[0] : 'Me',
+          userName: formatSenderName(user?.email ? user.email.split('@')[0] : 'Shivansh'),
         },
         style
       );

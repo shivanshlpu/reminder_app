@@ -5,7 +5,8 @@
  * - 24/7 Background native location updates via expo-task-manager & Foreground Service.
  * - Sticky status bar notification ("📍 Auto-Arrival Radar Active").
  * - Anti-ban sequential WhatsApp dispatch with 1.5s delay between recipients.
- * - Strict 1-per-day guard per location (resettable, persists in AsyncStorage).
+ * - Strict 1-per-24h cycle guard per location with customizable reset hours (e.g. 12 PM for Home, 12 AM for College).
+ * - Day-of-week active filter (e.g. weekdays only / exclude Saturday & Sunday for College).
  * - Real-time proximity radar & live distance calculation to nearest gate in foreground.
  * - Seamless fallback for web & permission state tracking.
  */
@@ -21,9 +22,20 @@ import {
   STORAGE_LAST_LOCATION_KEY,
   getTodayDateString,
   calculateDistanceMeters,
+  isLocationActiveOnDay,
+  parseResetHour,
+  getLocationCycleKey,
+  DAY_KEYS,
 } from './geofence-task';
 
-export { getTodayDateString, calculateDistanceMeters };
+export {
+  getTodayDateString,
+  calculateDistanceMeters,
+  isLocationActiveOnDay,
+  parseResetHour,
+  getLocationCycleKey,
+  DAY_KEYS,
+};
 
 const DEFAULT_GEOFENCE_RADIUS = 35; // 35 meters default for reliable mobile GPS gate detection
 
@@ -35,6 +47,8 @@ export interface GeofenceRegion {
   radius: number;
   autoSend: boolean;
   messageTemplate: string;
+  activeDays?: string | string[];
+  resetTime?: string;
   contacts: Array<{ phone: string; isGroup: boolean; name: string; contactId: number }>;
 }
 
@@ -52,6 +66,9 @@ export interface ProximityStatus {
     radius: number;
     isInside: boolean;
     triggeredToday: boolean;
+    isActiveToday: boolean;
+    resetTime?: string;
+    activeDays?: string | string[];
   } | null;
 }
 
@@ -110,20 +127,24 @@ export async function loadDailyTriggers(): Promise<Record<number, string>> {
 }
 
 /**
- * Checks if a specific location has already sent its automatic message today.
+ * Checks if a specific location has already sent its automatic message in its current 24-hour cycle.
  */
-export function isLocationTriggeredToday(locationId: number): boolean {
-  const today = getTodayDateString();
-  return dailyTriggerCache[locationId] === today;
+export function isLocationTriggeredInCycle(locationId: number, resetTime?: string): boolean {
+  const cycleKey = getLocationCycleKey(resetTime);
+  return dailyTriggerCache[locationId] === cycleKey;
+}
+
+export function isLocationTriggeredToday(locationId: number, resetTime?: string): boolean {
+  return isLocationTriggeredInCycle(locationId, resetTime);
 }
 
 /**
- * Records that a location has sent its alert today (persists to storage).
+ * Records that a location has sent its alert in its current 24-hour cycle (persists to storage).
  */
-export async function recordLocationTriggeredToday(locationId: number): Promise<void> {
+export async function recordLocationTriggeredToday(locationId: number, resetTime?: string): Promise<void> {
   await loadDailyTriggers();
-  const today = getTodayDateString();
-  dailyTriggerCache[locationId] = today;
+  const cycleKey = getLocationCycleKey(resetTime);
+  dailyTriggerCache[locationId] = cycleKey;
   try {
     await AsyncStorage.setItem(STORAGE_DAILY_TRIGGERS_KEY, JSON.stringify(dailyTriggerCache));
   } catch (e) {
@@ -133,7 +154,7 @@ export async function recordLocationTriggeredToday(locationId: number): Promise<
 }
 
 /**
- * Resets the daily trigger state for a location (allows re-triggering today).
+ * Resets the daily trigger state for a location (allows re-triggering immediately).
  */
 export async function resetLocationDailyTrigger(locationId: number): Promise<void> {
   await loadDailyTriggers();
@@ -209,7 +230,7 @@ export async function checkLocationPermissionStatus(): Promise<{
 }
 
 /**
- * Trigger the automatic arrival message once per day per location when entering the gate radius.
+ * Trigger the automatic arrival message once per 24-hour cycle per location when entering the gate radius.
  * Supports sequential anti-ban delay (1.5s) between multiple contacts!
  */
 export async function triggerArrivalAlert(
@@ -218,23 +239,32 @@ export async function triggerArrivalAlert(
   isManualTest: boolean = false
 ): Promise<{ success: boolean; recipientCount: number; message: string }> {
   await loadDailyTriggers();
-  const today = getTodayDateString();
+  const now = new Date();
 
-  // 1. Strict Once-Per-Day Guard (unless manually tested by user)
-  if (!isManualTest && dailyTriggerCache[region.id] === today) {
-    console.log(`📍 Geofence Guard: Alert for "${region.name}" was already dispatched today.`);
-    return { success: false, recipientCount: 0, message: 'Already sent today (1-per-day guard active)' };
+  // 1. Day of Week Filter Check (e.g. skip weekends for College)
+  if (!isManualTest && !isLocationActiveOnDay(region.activeDays, now)) {
+    const dayName = now.toLocaleDateString('en-IN', { weekday: 'long' });
+    console.log(`📍 Geofence Guard: "${region.name}" is inactive on ${dayName} (Weekend / Off-day).`);
+    return { success: false, recipientCount: 0, message: `Inactive today on ${dayName} (Weekend/Off-day)` };
+  }
+
+  const cycleKey = getLocationCycleKey(region.resetTime, now);
+
+  // 2. Strict Once-Per-Cycle Guard (unless manually tested by user)
+  if (!isManualTest && dailyTriggerCache[region.id] === cycleKey) {
+    console.log(`📍 Geofence Guard: Alert for "${region.name}" was already dispatched in cycle ${cycleKey}.`);
+    return { success: false, recipientCount: 0, message: 'Already sent in this 24-hour cycle' };
   }
 
   // Mark as triggered immediately to prevent duplicate async triggers
-  dailyTriggerCache[region.id] = today;
-  recordLocationTriggeredToday(region.id).catch(() => {});
+  dailyTriggerCache[region.id] = cycleKey;
+  recordLocationTriggeredToday(region.id, region.resetTime).catch(() => {});
 
-  console.log(`📍 1-Per-Day Gate Arrival: Entered ${region.name} (${Math.round(currentDistance)}m away)!`);
+  console.log(`📍 Gate Arrival: Entered ${region.name} (${Math.round(currentDistance)}m away, Cycle: ${cycleKey})!`);
 
   // Render template placeholders
-  const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   const messageText = (region.messageTemplate || 'Reached {location} at {time}.')
     .replace(/{location}/g, region.name)
     .replace(/{time}/g, timeStr)
@@ -278,7 +308,6 @@ export async function triggerArrivalAlert(
       trigger: null,
     });
   } catch (e) {}
-
 
   notifyStatusListeners();
 
@@ -426,7 +455,7 @@ export function getCurrentProximityStatus(): ProximityStatus {
   let nearestRegion: ProximityStatus['nearestRegion'] = null;
 
   if (lastKnownCoords && monitoredRegions.length > 0) {
-    const today = getTodayDateString();
+    const now = new Date();
     let minDistance = Infinity;
 
     monitoredRegions.forEach((region) => {
@@ -440,13 +469,19 @@ export function getCurrentProximityStatus(): ProximityStatus {
       if (distance < minDistance) {
         minDistance = distance;
         const radius = region.radius || DEFAULT_GEOFENCE_RADIUS;
+        const cycleKey = getLocationCycleKey(region.resetTime, now);
+        const isActiveToday = isLocationActiveOnDay(region.activeDays, now);
+
         nearestRegion = {
           id: region.id,
           name: region.name,
           distanceMeters: Math.round(distance),
           radius,
           isInside: distance <= radius + 20,
-          triggeredToday: dailyTriggerCache[region.id] === today,
+          triggeredToday: dailyTriggerCache[region.id] === cycleKey,
+          isActiveToday,
+          resetTime: region.resetTime,
+          activeDays: region.activeDays,
         };
       }
     });

@@ -14,6 +14,8 @@ export interface PinnedLocation {
   radius: number;
   auto_send: number;
   message_template: string;
+  active_days?: string;
+  reset_time?: string;
   created_at: number;
   contact_count?: number;
 }
@@ -51,12 +53,14 @@ export function useLocations() {
     latitude: number,
     longitude: number,
     radius: number = 200,
-    messageTemplate: string = 'Reached {location} at {time}.'
+    messageTemplate: string = 'Reached {location} at {time}.',
+    activeDays: string = 'mon,tue,wed,thu,fri,sat,sun',
+    resetTime: string = '12:00 AM'
   ) => {
     if (!db || !user) return;
     await db.runAsync(
-      'INSERT INTO pinned_locations (user_id, name, latitude, longitude, radius, message_template) VALUES (?, ?, ?, ?, ?, ?)',
-      [user.uid, name, latitude, longitude, radius, messageTemplate]
+      'INSERT INTO pinned_locations (user_id, name, latitude, longitude, radius, message_template, active_days, reset_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [user.uid, name, latitude, longitude, radius, messageTemplate, activeDays, resetTime]
     );
     await fetchLocations(false);
   }, [db, user, fetchLocations]);
@@ -66,12 +70,14 @@ export function useLocations() {
     name: string,
     radius: number,
     autoSend: boolean,
-    messageTemplate: string
+    messageTemplate: string,
+    activeDays: string = 'mon,tue,wed,thu,fri,sat,sun',
+    resetTime: string = '12:00 AM'
   ) => {
     if (!db || !user) return;
     await db.runAsync(
-      'UPDATE pinned_locations SET name = ?, radius = ?, auto_send = ?, message_template = ? WHERE id = ? AND user_id = ?',
-      [name, radius, autoSend ? 1 : 0, messageTemplate, id, user.uid]
+      'UPDATE pinned_locations SET name = ?, radius = ?, auto_send = ?, message_template = ?, active_days = ?, reset_time = ? WHERE id = ? AND user_id = ?',
+      [name, radius, autoSend ? 1 : 0, messageTemplate, activeDays, resetTime, id, user.uid]
     );
     await fetchLocations(false);
   }, [db, user, fetchLocations]);

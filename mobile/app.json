@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "ExpenseTracker",
-    "slug": "expense-tracker",
+    "name": "PocketRadar",
+    "slug": "pocketradar",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "scheme": "expense-tracker",
+    "scheme": "pocketradar",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to detect when you arrive at pinned locations.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Background location is needed to automatically notify contacts when you arrive at pinned locations.",
-        "NSContactsUsageDescription": "Allow ExpenseTracker to access contacts so you can easily select WhatsApp recipients and loan partners.",
+        "NSContactsUsageDescription": "Allow PocketRadar to access contacts so you can easily select WhatsApp recipients and loan partners.",
         "UIBackgroundModes": [
           "location",
           "fetch",
@@ -38,7 +38,7 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.READ_CONTACTS"
       ],
-      "package": "com.expensetracker.app"
+      "package": "com.pocketradar.app"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -52,7 +52,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Allow ExpenseTracker to use your location to detect arrival at pinned locations."
+          "locationAlwaysAndWhenInUsePermission": "Allow PocketRadar to use your location to detect arrival at pinned locations."
         }
       ],
       [

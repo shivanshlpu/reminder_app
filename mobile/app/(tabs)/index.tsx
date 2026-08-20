@@ -132,7 +132,11 @@ export default function DashboardScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Welcome back,</Text>
-          <Text style={styles.userName}>{user?.email?.split('@')[0] || 'User'}</Text>
+          <Text style={styles.userName}>
+            {user?.email?.toLowerCase().includes('shivansh')
+              ? 'Shivansh'
+              : user?.email?.split('@')[0]?.replace(/[0-9_.-]/g, '') || 'Shivansh'}
+          </Text>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity

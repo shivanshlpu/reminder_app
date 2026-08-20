@@ -54,8 +54,8 @@ export default function LoginScreen() {
             <View style={styles.iconCircle}>
               <MaterialCommunityIcons name="wallet-outline" size={40} color={Colors.primary} />
             </View>
-            <Text style={styles.title}>Expense Tracker</Text>
-            <Text style={styles.subtitle}>Log expenses & auto-notify via WhatsApp</Text>
+            <Text style={styles.title}>PocketRadar</Text>
+            <Text style={styles.subtitle}>GPS Gate Radar, Smart Khata & Expenses</Text>
           </View>
 
           {/* Form */}

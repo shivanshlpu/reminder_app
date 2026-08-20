@@ -63,7 +63,7 @@ export default function RegisterScreen() {
               <MaterialCommunityIcons name="account-plus-outline" size={40} color={Colors.secondary} />
             </View>
             <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Start tracking expenses & auto-notifying</Text>
+            <Text style={styles.subtitle}>Join PocketRadar for GPS alerts & expense tracking</Text>
           </View>
 
           <View style={styles.form}>

@@ -171,16 +171,28 @@ export function GeofenceRadarBanner({ onPressManage, showTestButton = true }: Ge
             <View
               style={[
                 styles.badge,
-                nearest.triggeredToday ? styles.badgeTriggered : styles.badgeReady,
+                !nearest.isActiveToday
+                  ? styles.badgeInactive
+                  : nearest.triggeredToday
+                  ? styles.badgeTriggered
+                  : styles.badgeReady,
               ]}
             >
               <Text
                 style={[
                   styles.badgeText,
-                  nearest.triggeredToday ? styles.badgeTextTriggered : styles.badgeTextReady,
+                  !nearest.isActiveToday
+                    ? styles.badgeTextInactive
+                    : nearest.triggeredToday
+                    ? styles.badgeTextTriggered
+                    : styles.badgeTextReady,
                 ]}
               >
-                {nearest.triggeredToday ? '🔒 Sent Today (1/1)' : '⚡ 1-Per-Day Ready (0/1)'}
+                {!nearest.isActiveToday
+                  ? '⏸️ Off Today (Weekend)'
+                  : nearest.triggeredToday
+                  ? '🔒 Sent in 24h Cycle (1/1)'
+                  : `⚡ 24h Cycle Ready (0/1) • Resets ${nearest.resetTime || '12:00 AM'}`}
               </Text>
             </View>
 
@@ -397,6 +409,9 @@ const styles = StyleSheet.create({
   badgeTriggered: {
     backgroundColor: '#F1F5F9',
   },
+  badgeInactive: {
+    backgroundColor: '#FEF3C7',
+  },
   badgeText: {
     fontSize: 10,
     fontWeight: '700',
@@ -406,6 +421,9 @@ const styles = StyleSheet.create({
   },
   badgeTextTriggered: {
     color: '#64748B',
+  },
+  badgeTextInactive: {
+    color: '#B45309',
   },
   resetBtn: {
     paddingHorizontal: 6,

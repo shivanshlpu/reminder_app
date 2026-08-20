@@ -20,7 +20,7 @@ interface LocalStorageDBData {
   users: Array<{ id: string; email: string; display_name?: string; created_at: number }>;
   categories: Array<{ id: number; user_id: string; name: string; icon: string; color: string; is_default: number; created_at: number }>;
   expenses: Array<{ id: number; user_id: string; category_id: number; amount: number; date: string; note: string | null; created_at: number; updated_at: number }>;
-  pinned_locations: Array<{ id: number; user_id: string; name: string; latitude: number; longitude: number; radius: number; auto_send: number; message_template: string; created_at: number }>;
+  pinned_locations: Array<{ id: number; user_id: string; name: string; latitude: number; longitude: number; radius: number; auto_send: number; message_template: string; active_days?: string; reset_time?: string; created_at: number }>;
   contacts: Array<{ id: number; user_id: string; name: string; phone: string; is_group: number; group_id: string | null; created_at: number }>;
   location_contacts: Array<{ id: number; location_id: number; contact_id: number }>;
   message_logs: Array<{ id: number; user_id: string; location_id: number | null; contact_id: number | null; location_name: string; recipient_name: string; recipient_phone: string; message_content: string; status: string; error_message: string | null; sent_at: number }>;
@@ -230,8 +230,10 @@ class AsyncStorageDatabase implements IDatabase {
 
     // 6. INSERT INTO pinned_locations
     if (/^INSERT\s+INTO\s+pinned_locations/i.test(cleanSql)) {
-      const [user_id, name, latitude, longitude, radius, message_template] = params;
+      const [user_id, name, latitude, longitude, radius, message_template, active_days, reset_time] = params;
       const id = this.data.autoIncrement.pinned_locations++;
+      const activeDaysVal = active_days || 'mon,tue,wed,thu,fri,sat,sun';
+      const resetTimeVal = reset_time || '12:00 AM';
       this.data.pinned_locations.push({
         id,
         user_id: String(user_id),
@@ -241,6 +243,8 @@ class AsyncStorageDatabase implements IDatabase {
         radius: Number(radius) || 10,
         auto_send: 1,
         message_template: message_template || 'Reached {location} at {time}.',
+        active_days: activeDaysVal,
+        reset_time: resetTimeVal,
         created_at: Date.now(),
       });
       this.scheduleSave();
@@ -253,6 +257,8 @@ class AsyncStorageDatabase implements IDatabase {
         radius: Number(radius) || 10,
         autoSend: true,
         messageTemplate: message_template || 'Reached {location} at {time}.',
+        activeDays: activeDaysVal.split(','),
+        resetTime: resetTimeVal,
       });
 
       return { lastInsertRowId: id, changes: 1 };
@@ -260,13 +266,24 @@ class AsyncStorageDatabase implements IDatabase {
 
     // 7. UPDATE pinned_locations
     if (/^UPDATE\s+pinned_locations/i.test(cleanSql)) {
-      const [name, radius, auto_send, message_template, id] = params;
-      const loc = this.data.pinned_locations.find((l) => l.id === Number(id));
+      const idParam = params[params.length - 2] !== undefined && typeof params[params.length - 1] === 'string' ? params[params.length - 2] : params[params.length - 1];
+      const loc = this.data.pinned_locations.find((l) => l.id === Number(idParam));
       if (loc) {
-        loc.name = String(name);
-        loc.radius = Number(radius);
-        loc.auto_send = Number(auto_send);
-        loc.message_template = String(message_template);
+        if (cleanSql.includes('active_days = ?') && cleanSql.includes('reset_time = ?')) {
+          const [name, radius, auto_send, message_template, active_days, reset_time] = params;
+          loc.name = String(name);
+          loc.radius = Number(radius);
+          loc.auto_send = Number(auto_send);
+          loc.message_template = String(message_template);
+          loc.active_days = String(active_days || 'mon,tue,wed,thu,fri,sat,sun');
+          loc.reset_time = String(reset_time || '12:00 AM');
+        } else {
+          const [name, radius, auto_send, message_template] = params;
+          loc.name = String(name);
+          loc.radius = Number(radius);
+          loc.auto_send = Number(auto_send);
+          loc.message_template = String(message_template);
+        }
         this.scheduleSave();
         return { lastInsertRowId: loc.id, changes: 1 };
       }
@@ -636,7 +653,12 @@ class AsyncStorageDatabase implements IDatabase {
         .sort((a, b) => b.created_at - a.created_at)
         .map((l) => {
           const contact_count = this.data.location_contacts.filter((lc) => lc.location_id === l.id).length;
-          return { ...l, contact_count };
+          return {
+            ...l,
+            active_days: l.active_days || 'mon,tue,wed,thu,fri,sat,sun',
+            reset_time: l.reset_time || '12:00 AM',
+            contact_count,
+          };
         });
       return locs as unknown as T[];
     }
@@ -753,6 +775,8 @@ async function initializeSqliteSchema(db: any): Promise<void> {
       radius INTEGER DEFAULT 10,
       auto_send INTEGER DEFAULT 1,
       message_template TEXT DEFAULT 'Reached {location} at {time}.',
+      active_days TEXT DEFAULT 'mon,tue,wed,thu,fri,sat,sun',
+      reset_time TEXT DEFAULT '12:00 AM',
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
@@ -814,4 +838,12 @@ async function initializeSqliteSchema(db: any): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_loans_user_type ON loans (user_id, type, status);
     CREATE INDEX IF NOT EXISTS idx_loans_user_date ON loans (user_id, date DESC);
   `);
+
+  // Safe schema migrations for existing databases
+  try {
+    await db.execAsync("ALTER TABLE pinned_locations ADD COLUMN active_days TEXT DEFAULT 'mon,tue,wed,thu,fri,sat,sun';");
+  } catch (e) {}
+  try {
+    await db.execAsync("ALTER TABLE pinned_locations ADD COLUMN reset_time TEXT DEFAULT '12:00 AM';");
+  } catch (e) {}
 }

@@ -1,6 +1,6 @@
 {
-  "short_name": "ExpenseTracker",
-  "name": "Expense & Reminder Tracker",
+  "short_name": "PocketRadar",
+  "name": "PocketRadar — Radar Alerts & Expense Tracker",
   "icons": [
     {
       "src": "/favicon.png",

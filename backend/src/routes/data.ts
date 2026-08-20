@@ -99,7 +99,7 @@ router.get('/locations', async (req: Request, res: Response) => {
 // POST /api/data/locations
 router.post('/locations', async (req: Request, res: Response) => {
   try {
-    const { userId, name, latitude, longitude, radius, autoSend, messageTemplate, assignedContactIds } = req.body;
+    const { userId, name, latitude, longitude, radius, autoSend, messageTemplate, assignedContactIds, activeDays, resetTime } = req.body;
     const location = new PinnedLocationModel({
       userId: String(userId),
       name: String(name),
@@ -109,6 +109,8 @@ router.post('/locations', async (req: Request, res: Response) => {
       autoSend: autoSend !== undefined ? Boolean(autoSend) : true,
       messageTemplate: messageTemplate || 'Reached {location} at {time}.',
       assignedContactIds: assignedContactIds || [],
+      activeDays: activeDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
+      resetTime: resetTime || '12:00 AM',
     });
     await location.save();
     res.json({ success: true, data: location });

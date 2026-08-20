@@ -38,7 +38,7 @@ app.use('/api/data', dataRouter);
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
-    name: 'Expense Tracker WhatsApp Backend with MongoDB Atlas',
+    name: 'PocketRadar WhatsApp & Data Backend with MongoDB Atlas',
     version: '1.0.0',
     endpoints: {
       health: '/api/health',

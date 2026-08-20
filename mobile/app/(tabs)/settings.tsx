@@ -176,7 +176,11 @@ export default function SettingsScreen() {
           <MaterialCommunityIcons name="account-circle-outline" size={52} color={Colors.primary} />
         </View>
         <View style={styles.userInfo}>
-          <Text style={styles.userName}>{user?.email?.split('@')[0] || 'User Account'}</Text>
+          <Text style={styles.userName}>
+            {user?.email?.toLowerCase().includes('shivansh')
+              ? 'Shivansh'
+              : user?.email?.split('@')[0]?.replace(/[0-9_.-]/g, '') || 'Shivansh'}
+          </Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
         </View>
       </View>
@@ -307,7 +311,7 @@ export default function SettingsScreen() {
         </Button>
       </View>
 
-      <Text style={styles.version}>Expense Tracker v1.0.0</Text>
+      <Text style={styles.version}>PocketRadar v1.0.0</Text>
 
       {/* Live QR Code Modal */}
       <Portal>

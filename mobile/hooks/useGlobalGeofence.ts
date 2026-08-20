@@ -91,6 +91,8 @@ export function useGlobalGeofence() {
             radius: loc.radius || 35,
             autoSend: loc.auto_send === 1,
             messageTemplate: loc.message_template,
+            activeDays: loc.active_days || 'mon,tue,wed,thu,fri,sat,sun',
+            resetTime: loc.reset_time || '12:00 AM',
             contacts: (targetContacts || []).map((c) => ({
               phone: c.phone,
               isGroup: c.is_group === 1,
@@ -165,6 +167,8 @@ export function useGlobalGeofence() {
         radius: loc.radius || 35,
         autoSend: true,
         messageTemplate: loc.message_template,
+        activeDays: loc.active_days || 'mon,tue,wed,thu,fri,sat,sun',
+        resetTime: loc.reset_time || '12:00 AM',
         contacts: (targetContacts || []).map((c) => ({
           phone: c.phone,
           isGroup: c.is_group === 1,

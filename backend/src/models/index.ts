@@ -74,6 +74,8 @@ export interface IPinnedLocation extends Document {
   autoSend: boolean;
   messageTemplate: string;
   assignedContactIds: string[];
+  activeDays?: string[];
+  resetTime?: string;
   createdAt: Date;
 }
 const PinnedLocationSchema = new Schema<IPinnedLocation>({
@@ -85,6 +87,8 @@ const PinnedLocationSchema = new Schema<IPinnedLocation>({
   autoSend: { type: Boolean, default: true },
   messageTemplate: { type: String, default: 'Reached {location} at {time}.' },
   assignedContactIds: [{ type: String }],
+  activeDays: { type: [String], default: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
+  resetTime: { type: String, default: '12:00 AM' },
   createdAt: { type: Date, default: Date.now },
 });
 export const PinnedLocationModel = mongoose.model<IPinnedLocation>('PinnedLocation', PinnedLocationSchema);
