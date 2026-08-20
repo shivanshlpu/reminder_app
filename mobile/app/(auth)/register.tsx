@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  Image,
 } from 'react-native';
 import { TextInput, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -59,9 +60,11 @@ export default function RegisterScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <View style={styles.header}>
-            <View style={styles.iconCircle}>
-              <MaterialCommunityIcons name="account-plus-outline" size={40} color={Colors.secondary} />
-            </View>
+            <Image
+              source={require('../../assets/icon.png')}
+              style={styles.appLogo}
+              resizeMode="contain"
+            />
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>Join PocketRadar for GPS alerts & expense tracking</Text>
           </View>
@@ -166,6 +169,13 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginBottom: Spacing.xxl,
+  },
+  appLogo: {
+    width: 88,
+    height: 88,
+    borderRadius: 22,
+    marginBottom: Spacing.md,
+    ...Shadows.medium,
   },
   iconCircle: {
     width: 76,

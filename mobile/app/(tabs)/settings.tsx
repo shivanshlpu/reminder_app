@@ -311,7 +311,19 @@ export default function SettingsScreen() {
         </Button>
       </View>
 
-      <Text style={styles.version}>PocketRadar v1.0.0</Text>
+      {/* App Branding & Version Card */}
+      <View style={styles.appBrandingCard}>
+        <Image
+          source={require('../../assets/icon.png')}
+          style={styles.brandingLogo}
+          resizeMode="contain"
+        />
+        <View style={styles.brandingInfo}>
+          <Text style={styles.brandingTitle}>PocketRadar</Text>
+          <Text style={styles.brandingSubtitle}>GPS Gate Radar, Smart Khata & Expenses</Text>
+          <Text style={styles.brandingVersion}>Version 1.0.0 (Build 2026.1)</Text>
+        </View>
+      </View>
 
       {/* Live QR Code Modal */}
       <Portal>
@@ -426,7 +438,41 @@ const styles = StyleSheet.create({
   settingLabel: { fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.text },
   settingDesc: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, marginTop: 2 },
   signOutBtn: { borderColor: Colors.accent, borderRadius: BorderRadius.md },
-  version: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.md },
+  appBrandingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
+    gap: Spacing.md,
+  },
+  brandingLogo: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+  },
+  brandingInfo: {
+    flex: 1,
+  },
+  brandingTitle: {
+    fontSize: Fonts.sizes.md,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  brandingSubtitle: {
+    fontSize: Fonts.sizes.xs,
+    color: Colors.textSecondary,
+  },
+  brandingVersion: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    marginTop: 2,
+    fontWeight: '600',
+  },
 
   qrModal: {
     backgroundColor: Colors.surface,

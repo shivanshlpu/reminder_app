@@ -295,6 +295,34 @@ export default function LocationsScreen() {
     });
   };
 
+  const applyLocationPreset = (type: 'college' | 'home' | 'hostel' | 'office') => {
+    if (type === 'college') {
+      setLocationName('College Gate');
+      setMessageTemplate('Hey, I have safely reached college for lectures at {time}.');
+      setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri']);
+      setResetTime('12:00 AM');
+      showMessage('Preset Applied', 'College Gate (Weekdays only, 12 AM reset)', 'info');
+    } else if (type === 'home') {
+      setLocationName('Home');
+      setMessageTemplate('Reached home safely at {time}.');
+      setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+      setResetTime('12:00 PM');
+      showMessage('Preset Applied', 'Home (All 7 Days, 12 PM Noon reset)', 'info');
+    } else if (type === 'hostel') {
+      setLocationName('Hostel Gate');
+      setMessageTemplate('Reached hostel room at {time}. Calling you shortly!');
+      setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+      setResetTime('12:00 PM');
+      showMessage('Preset Applied', 'Hostel (All 7 Days, 12 PM reset)', 'info');
+    } else if (type === 'office') {
+      setLocationName('Office');
+      setMessageTemplate('Reached office safely at {time}.');
+      setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri']);
+      setResetTime('12:00 AM');
+      showMessage('Preset Applied', 'Office (Weekdays only, 12 AM reset)', 'info');
+    }
+  };
+
   const applyPresetTemplate = (item: typeof PRESET_TEMPLATES[0]) => {
     setMessageTemplate(item.template);
     if (item.defaultDays) {
@@ -649,243 +677,348 @@ export default function LocationsScreen() {
 
       {/* Add / Edit Location & Custom Message Rules Modal */}
       <Portal>
-        <Modal visible={showAddModal} onDismiss={() => setShowAddModal(false)} contentContainerStyle={styles.modal}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ width: '100%' }}>
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalTitle}>
-                {editingLocId ? 'Edit Location & Rules' : 'Pin Location & Message Rules'}
-              </Text>
-
-              <TextInput
-                label="Location Name / Label"
-                value={locationName}
-                onChangeText={setLocationName}
-                mode="outlined"
-                placeholder='e.g. "College Campus", "Home", "Hostel Gate"'
-                left={<TextInput.Icon icon="map-marker-outline" color={Colors.textSecondary} />}
-                style={styles.modalInput}
-                outlineColor={Colors.border}
-                activeOutlineColor={Colors.secondary}
-                textColor={Colors.text}
-                theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-              />
-
-              {/* Map and GPS Buttons Row */}
-              <View style={styles.mapButtonsRow}>
-                <Button
-                  mode="contained"
-                  onPress={openMapStudio}
-                  icon="map-search"
-                  buttonColor={Colors.secondary}
-                  textColor="#FFFFFF"
-                  style={[styles.pickerBtn, { flex: 1.2 }]}
-                >
-                  Pick on Map 🗺️
-                </Button>
-                <Button
-                  mode="outlined"
-                  onPress={getCurrentLocation}
-                  loading={gettingLocation}
-                  icon="crosshairs-gps"
-                  style={[styles.pickerBtn, { flex: 1 }]}
-                  textColor={Colors.secondary}
-                >
-                  Current GPS
-                </Button>
+        <Modal
+          visible={showAddModal}
+          onDismiss={() => setShowAddModal(false)}
+          contentContainerStyle={styles.addLocationModalContainer}
+        >
+          <View style={styles.modalBox}>
+            {/* 1. Sticky Header */}
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>
+                  {editingLocId ? 'Edit Geofence & Rules' : 'Pin New Gate Location'}
+                </Text>
+                <Text style={styles.modalSubtitle}>
+                  Configure 10-meter gate radar & auto-WhatsApp alerts
+                </Text>
               </View>
+              <TouchableOpacity
+                onPress={() => setShowAddModal(false)}
+                style={styles.modalCloseBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <MaterialCommunityIcons name="close" size={22} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
 
-              <View style={styles.coordRow}>
-                <TextInput
-                  label="Latitude"
-                  value={latitude}
-                  onChangeText={setLatitude}
-                  mode="outlined"
-                  placeholder="e.g. 28.6139"
-                  keyboardType="decimal-pad"
-                  style={[styles.modalInput, { flex: 1 }]}
-                  outlineColor={Colors.border}
-                  activeOutlineColor={Colors.secondary}
-                  textColor={Colors.text}
-                  theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-                />
-                <TextInput
-                  label="Longitude"
-                  value={longitude}
-                  onChangeText={setLongitude}
-                  mode="outlined"
-                  placeholder="e.g. 77.2090"
-                  keyboardType="decimal-pad"
-                  style={[styles.modalInput, { flex: 1 }]}
-                  outlineColor={Colors.border}
-                  activeOutlineColor={Colors.secondary}
-                  textColor={Colors.text}
-                  theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-                />
-                <TextInput
-                  label="Radius (m)"
-                  value={radius}
-                  onChangeText={setRadius}
-                  mode="outlined"
-                  keyboardType="number-pad"
-                  style={[styles.modalInput, { width: 90 }]}
-                  outlineColor={Colors.border}
-                  activeOutlineColor={Colors.secondary}
-                  textColor={Colors.text}
-                  theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-                />
-              </View>
+            {/* 2. Scrollable Form Content */}
+            <ScrollView
+              style={styles.modalScrollBody}
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+            >
+              {/* STEP 1: Location Name */}
+              <View style={styles.cardSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <MaterialCommunityIcons name="tag-outline" size={18} color={Colors.secondary} />
+                  <Text style={styles.sectionTitle}>1. Location Name & Preset</Text>
+                </View>
 
-              {/* SECTION: Active Days & Weekend Filter */}
-              <View style={styles.sectionDivider} />
-              <View style={styles.sectionHeaderRow}>
-                <MaterialCommunityIcons name="calendar-check" size={18} color={Colors.secondary} />
-                <Text style={styles.sectionLabel}>Active Days (When Messages Can Send):</Text>
-              </View>
-              <Text style={styles.sectionSubtext}>
-                Uncheck Saturday & Sunday for College so messages won't send on weekends.
-              </Text>
-
-              {/* Quick Day Presets */}
-              <View style={styles.quickDayRow}>
-                <TouchableOpacity
-                  style={[styles.quickDayBtn, selectedDays.length === 5 && !selectedDays.includes('sat') && !selectedDays.includes('sun') && styles.quickDayBtnActive]}
-                  onPress={() => setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri'])}
-                >
-                  <Text style={[styles.quickDayBtnText, selectedDays.length === 5 && !selectedDays.includes('sat') && !selectedDays.includes('sun') && styles.quickDayBtnTextActive]}>
-                    💼 Weekdays Only (Mon-Fri)
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.quickDayBtn, selectedDays.length === 7 && styles.quickDayBtnActive]}
-                  onPress={() => setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])}
-                >
-                  <Text style={[styles.quickDayBtnText, selectedDays.length === 7 && styles.quickDayBtnTextActive]}>
-                    🌟 All 7 Days
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Day selection chips */}
-              <View style={styles.daysChipsGrid}>
-                {ALL_DAYS.map((d) => {
-                  const isSelected = selectedDays.includes(d.key);
-                  const isWeekend = d.key === 'sat' || d.key === 'sun';
-                  return (
-                    <TouchableOpacity
-                      key={d.key}
-                      style={[
-                        styles.dayChip,
-                        isSelected ? styles.dayChipSelected : styles.dayChipUnselected,
-                        isWeekend && isSelected ? styles.dayChipWeekend : undefined,
-                      ]}
-                      onPress={() => toggleDaySelection(d.key)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.dayChipText, isSelected ? styles.dayChipTextSelected : styles.dayChipTextUnselected]}>
-                        {d.label}
-                      </Text>
-                      {isSelected && (
-                        <MaterialCommunityIcons name="check" size={12} color="#FFFFFF" style={{ marginLeft: 2 }} />
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* SECTION: 24-Hour Reset Timing */}
-              <View style={styles.sectionDivider} />
-              <View style={styles.sectionHeaderRow}>
-                <MaterialCommunityIcons name="clock-time-four-outline" size={18} color={Colors.secondary} />
-                <Text style={styles.sectionLabel}>24-Hour Reset Schedule:</Text>
-              </View>
-              <Text style={styles.sectionSubtext}>
-                Set Home to 12:00 PM (Noon) so it won't reset at 12:00 AM midnight while you are already at home.
-              </Text>
-
-              <View style={styles.resetOptionsContainer}>
-                {RESET_TIME_OPTIONS.map((opt) => {
-                  const isSelected = resetTime === opt.value;
-                  return (
-                    <TouchableOpacity
-                      key={opt.value}
-                      style={[styles.resetOptionCard, isSelected && styles.resetOptionCardSelected]}
-                      onPress={() => setResetTime(opt.value)}
-                      activeOpacity={0.8}
-                    >
-                      <View style={styles.resetOptionHeader}>
-                        <MaterialCommunityIcons
-                          name={isSelected ? 'radiobox-marked' : 'radiobox-blank'}
-                          size={18}
-                          color={isSelected ? Colors.secondary : Colors.textMuted}
-                        />
-                        <Text style={[styles.resetOptionLabel, isSelected && styles.resetOptionLabelSelected]}>
-                          {opt.label}
-                        </Text>
-                      </View>
-                      <Text style={styles.resetOptionDesc}>{opt.desc}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* SECTION: Message Templates */}
-              <View style={styles.sectionDivider} />
-              <Text style={styles.templatesLabel}>Choose Quick Message Preset:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templateChipsScroll}>
-                {PRESET_TEMPLATES.map((item, idx) => (
-                  <Chip
-                    key={idx}
-                    mode="outlined"
-                    onPress={() => applyPresetTemplate(item)}
-                    style={styles.templateChip}
-                    textStyle={{ fontSize: 11, fontWeight: '600' }}
+                {/* Quick Presets */}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetNameScroll}>
+                  <TouchableOpacity
+                    style={[styles.presetChip, locationName.toLowerCase().includes('college') && styles.presetChipActive]}
+                    onPress={() => applyLocationPreset('college')}
                   >
-                    {item.label}
-                  </Chip>
-                ))}
-              </ScrollView>
+                    <Text style={[styles.presetChipText, locationName.toLowerCase().includes('college') && styles.presetChipTextActive]}>
+                      🎓 College Gate
+                    </Text>
+                  </TouchableOpacity>
 
-              {/* Custom Message Editor */}
-              <TextInput
-                label="WhatsApp Message to Send"
-                value={messageTemplate}
-                onChangeText={setMessageTemplate}
-                mode="outlined"
-                multiline
-                numberOfLines={3}
-                left={<TextInput.Icon icon="message-text-outline" color={Colors.textSecondary} />}
-                style={styles.modalInput}
-                outlineColor={Colors.border}
-                activeOutlineColor={Colors.secondary}
-                textColor={Colors.text}
-                theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
-              />
+                  <TouchableOpacity
+                    style={[styles.presetChip, locationName.toLowerCase().includes('home') && styles.presetChipActive]}
+                    onPress={() => applyLocationPreset('home')}
+                  >
+                    <Text style={[styles.presetChipText, locationName.toLowerCase().includes('home') && styles.presetChipTextActive]}>
+                      🏠 Home
+                    </Text>
+                  </TouchableOpacity>
 
-              {/* Variable Placeholders */}
-              <View style={styles.tagsRow}>
-                <Text style={{ fontSize: 11, color: Colors.textMuted }}>Insert tag:</Text>
-                <TouchableOpacity onPress={() => insertPlaceholder('{location}')} style={styles.tagBadge}>
-                  <Text style={styles.tagText}>{'{location}'}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => insertPlaceholder('{time}')} style={styles.tagBadge}>
-                  <Text style={styles.tagText}>{'{time}'}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => insertPlaceholder('{date}')} style={styles.tagBadge}>
-                  <Text style={styles.tagText}>{'{date}'}</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.presetChip, (locationName.toLowerCase().includes('hostel') || locationName.toLowerCase().includes('pg')) && styles.presetChipActive]}
+                    onPress={() => applyLocationPreset('hostel')}
+                  >
+                    <Text style={[styles.presetChipText, (locationName.toLowerCase().includes('hostel') || locationName.toLowerCase().includes('pg')) && styles.presetChipTextActive]}>
+                      🏢 Hostel / PG
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.presetChip, locationName.toLowerCase().includes('office') && styles.presetChipActive]}
+                    onPress={() => applyLocationPreset('office')}
+                  >
+                    <Text style={[styles.presetChipText, locationName.toLowerCase().includes('office') && styles.presetChipTextActive]}>
+                      💼 Office
+                    </Text>
+                  </TouchableOpacity>
+                </ScrollView>
+
+                <TextInput
+                  label="Location Name / Label *"
+                  value={locationName}
+                  onChangeText={setLocationName}
+                  mode="outlined"
+                  placeholder='e.g. "College Gate", "Home", "Hostel Gate"'
+                  left={<TextInput.Icon icon="map-marker-outline" color={Colors.secondary} />}
+                  style={styles.modalInput}
+                  outlineColor={Colors.border}
+                  activeOutlineColor={Colors.secondary}
+                  textColor={Colors.text}
+                  theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+                />
               </View>
 
-              <View style={styles.modalActions}>
-                <Button mode="outlined" onPress={() => setShowAddModal(false)} textColor={Colors.textSecondary} style={styles.modalBtn}>
-                  Cancel
-                </Button>
-                <Button mode="contained" onPress={handleSave} loading={saving} disabled={saving} buttonColor={Colors.secondary} style={styles.modalBtn}>
-                  {editingLocId ? 'Update Location & Rules' : 'Pin Location & Save'}
-                </Button>
+              {/* STEP 2: GPS Gate Coordinates & Radius */}
+              <View style={styles.cardSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <MaterialCommunityIcons name="crosshairs-gps" size={18} color={Colors.secondary} />
+                  <Text style={styles.sectionTitle}>2. GPS Coordinates & Gate Radius</Text>
+                </View>
+
+                <View style={styles.mapButtonsRow}>
+                  <Button
+                    mode="contained"
+                    onPress={openMapStudio}
+                    icon="map-search"
+                    buttonColor={Colors.secondary}
+                    textColor="#FFFFFF"
+                    style={[styles.pickerBtn, { flex: 1.2 }]}
+                  >
+                    Pick on Map 🗺️
+                  </Button>
+                  <Button
+                    mode="outlined"
+                    onPress={getCurrentLocation}
+                    loading={gettingLocation}
+                    icon="crosshairs-gps"
+                    style={[styles.pickerBtn, { flex: 1 }]}
+                    textColor={Colors.secondary}
+                  >
+                    Current GPS
+                  </Button>
+                </View>
+
+                <View style={styles.coordRow}>
+                  <TextInput
+                    label="Latitude *"
+                    value={latitude}
+                    onChangeText={setLatitude}
+                    mode="outlined"
+                    placeholder="e.g. 28.6139"
+                    keyboardType="decimal-pad"
+                    style={[styles.modalInput, { flex: 1 }]}
+                    outlineColor={Colors.border}
+                    activeOutlineColor={Colors.secondary}
+                    textColor={Colors.text}
+                    theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+                  />
+                  <TextInput
+                    label="Longitude *"
+                    value={longitude}
+                    onChangeText={setLongitude}
+                    mode="outlined"
+                    placeholder="e.g. 77.2090"
+                    keyboardType="decimal-pad"
+                    style={[styles.modalInput, { flex: 1 }]}
+                    outlineColor={Colors.border}
+                    activeOutlineColor={Colors.secondary}
+                    textColor={Colors.text}
+                    theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+                  />
+                  <TextInput
+                    label="Radius (m)"
+                    value={radius}
+                    onChangeText={setRadius}
+                    mode="outlined"
+                    keyboardType="number-pad"
+                    style={[styles.modalInput, { width: 95 }]}
+                    outlineColor={Colors.border}
+                    activeOutlineColor={Colors.secondary}
+                    textColor={Colors.text}
+                    theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+                  />
+                </View>
+              </View>
+
+              {/* STEP 3: WhatsApp Message Content */}
+              <View style={styles.cardSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <MaterialCommunityIcons name="whatsapp" size={18} color={Colors.secondary} />
+                  <Text style={styles.sectionTitle}>3. WhatsApp Message Content</Text>
+                </View>
+                <Text style={styles.sectionSubtext}>Choose a quick message preset or customize:</Text>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templateChipsScroll}>
+                  {PRESET_TEMPLATES.map((item, idx) => (
+                    <Chip
+                      key={idx}
+                      mode="outlined"
+                      onPress={() => applyPresetTemplate(item)}
+                      style={styles.templateChip}
+                      textStyle={{ fontSize: 11, fontWeight: '600' }}
+                    >
+                      {item.label}
+                    </Chip>
+                  ))}
+                </ScrollView>
+
+                <TextInput
+                  label="WhatsApp Message to Send *"
+                  value={messageTemplate}
+                  onChangeText={setMessageTemplate}
+                  mode="outlined"
+                  multiline
+                  numberOfLines={3}
+                  left={<TextInput.Icon icon="message-text-outline" color={Colors.secondary} />}
+                  style={styles.modalInput}
+                  outlineColor={Colors.border}
+                  activeOutlineColor={Colors.secondary}
+                  textColor={Colors.text}
+                  theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+                />
+
+                <View style={styles.tagsRow}>
+                  <Text style={{ fontSize: 11, color: Colors.textMuted }}>Insert tag:</Text>
+                  <TouchableOpacity onPress={() => insertPlaceholder('{location}')} style={styles.tagBadge}>
+                    <Text style={styles.tagText}>{'{location}'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => insertPlaceholder('{time}')} style={styles.tagBadge}>
+                    <Text style={styles.tagText}>{'{time}'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => insertPlaceholder('{date}')} style={styles.tagBadge}>
+                    <Text style={styles.tagText}>{'{date}'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* STEP 4: Active Days & 24h Reset Schedule */}
+              <View style={styles.cardSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <MaterialCommunityIcons name="calendar-clock" size={18} color={Colors.secondary} />
+                  <Text style={styles.sectionTitle}>4. Active Days & Reset Schedule</Text>
+                </View>
+
+                {/* Active Days */}
+                <View style={styles.subSectionBox}>
+                  <View style={styles.sectionHeaderRow}>
+                    <MaterialCommunityIcons name="calendar-check" size={16} color={Colors.secondary} />
+                    <Text style={styles.subSectionTitle}>Active Days (When Messages Can Send):</Text>
+                  </View>
+                  <Text style={styles.sectionSubtext}>
+                    Uncheck Saturday & Sunday for College so messages won't send on weekends.
+                  </Text>
+
+                  <View style={styles.quickDayRow}>
+                    <TouchableOpacity
+                      style={[styles.quickDayBtn, selectedDays.length === 5 && !selectedDays.includes('sat') && !selectedDays.includes('sun') && styles.quickDayBtnActive]}
+                      onPress={() => setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri'])}
+                    >
+                      <Text style={[styles.quickDayBtnText, selectedDays.length === 5 && !selectedDays.includes('sat') && !selectedDays.includes('sun') && styles.quickDayBtnTextActive]}>
+                        💼 Weekdays Only (Mon-Fri)
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.quickDayBtn, selectedDays.length === 7 && styles.quickDayBtnActive]}
+                      onPress={() => setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])}
+                    >
+                      <Text style={[styles.quickDayBtnText, selectedDays.length === 7 && styles.quickDayBtnTextActive]}>
+                        🌟 All 7 Days
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.daysChipsGrid}>
+                    {ALL_DAYS.map((d) => {
+                      const isSelected = selectedDays.includes(d.key);
+                      const isWeekend = d.key === 'sat' || d.key === 'sun';
+                      return (
+                        <TouchableOpacity
+                          key={d.key}
+                          style={[
+                            styles.dayChip,
+                            isSelected ? styles.dayChipSelected : styles.dayChipUnselected,
+                            isWeekend && isSelected ? styles.dayChipWeekend : undefined,
+                          ]}
+                          onPress={() => toggleDaySelection(d.key)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.dayChipText, isSelected ? styles.dayChipTextSelected : styles.dayChipTextUnselected]}>
+                            {d.label}
+                          </Text>
+                          {isSelected && (
+                            <MaterialCommunityIcons name="check" size={12} color="#FFFFFF" style={{ marginLeft: 2 }} />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* 24-Hour Reset Schedule */}
+                <View style={[styles.subSectionBox, { marginTop: Spacing.sm }]}>
+                  <View style={styles.sectionHeaderRow}>
+                    <MaterialCommunityIcons name="clock-time-four-outline" size={16} color={Colors.secondary} />
+                    <Text style={styles.subSectionTitle}>24-Hour Reset Schedule:</Text>
+                  </View>
+                  <Text style={styles.sectionSubtext}>
+                    Set Home to 12:00 PM (Noon) so it won't reset at 12:00 AM midnight while you are at home!
+                  </Text>
+
+                  <View style={styles.resetOptionsContainer}>
+                    {RESET_TIME_OPTIONS.map((opt) => {
+                      const isSelected = resetTime === opt.value;
+                      return (
+                        <TouchableOpacity
+                          key={opt.value}
+                          style={[styles.resetOptionCard, isSelected && styles.resetOptionCardSelected]}
+                          onPress={() => setResetTime(opt.value)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={styles.resetOptionHeader}>
+                            <MaterialCommunityIcons
+                              name={isSelected ? 'radiobox-marked' : 'radiobox-blank'}
+                              size={18}
+                              color={isSelected ? Colors.secondary : Colors.textMuted}
+                            />
+                            <Text style={[styles.resetOptionLabel, isSelected && styles.resetOptionLabelSelected]}>
+                              {opt.label}
+                            </Text>
+                          </View>
+                          <Text style={styles.resetOptionDesc}>{opt.desc}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
               </View>
             </ScrollView>
-          </KeyboardAvoidingView>
+
+            {/* 3. Sticky Footer */}
+            <View style={styles.modalFooter}>
+              <Button
+                mode="outlined"
+                onPress={() => setShowAddModal(false)}
+                textColor={Colors.textSecondary}
+                style={styles.footerBtn}
+              >
+                Cancel
+              </Button>
+              <Button
+                mode="contained"
+                onPress={handleSave}
+                loading={saving}
+                disabled={saving}
+                buttonColor={Colors.secondary}
+                style={[styles.footerBtn, { flex: 1.4 }]}
+                labelStyle={{ fontWeight: '700' }}
+              >
+                {editingLocId ? 'Update Location' : 'Save & Pin Gate'}
+              </Button>
+            </View>
+          </View>
         </Modal>
 
         {/* Assign Contacts Modal */}
@@ -1035,37 +1168,128 @@ const styles = StyleSheet.create({
   emptyText: { fontSize: Fonts.sizes.lg, color: Colors.text, fontWeight: '700' },
   emptySubtext: { fontSize: Fonts.sizes.sm, color: Colors.textMuted, textAlign: 'center', paddingHorizontal: Spacing.xxl },
   fab: { position: 'absolute', right: Spacing.lg, bottom: Spacing.lg, backgroundColor: Colors.secondary, borderRadius: 28, ...Shadows.large },
-  modal: { backgroundColor: Colors.surface, margin: Spacing.md, maxWidth: 600, maxHeight: '88%', alignSelf: 'center', width: '94%', borderRadius: BorderRadius.xl, padding: Spacing.lg },
-  modalTitle: { fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.text, marginBottom: Spacing.xs },
-  modalSubtitle: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginBottom: Spacing.sm },
-  contactCheckRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
-  contactRowName: { fontSize: Fonts.sizes.md, fontWeight: '600', color: Colors.text },
-  contactRowPhone: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary },
-  modalInput: { backgroundColor: Colors.surface, marginBottom: Spacing.md },
-  mapButtonsRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.md },
+  
+  // Structured Add/Edit Location Modal Styles
+  addLocationModalContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.sm,
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+  },
+  modalBox: {
+    backgroundColor: Colors.surface,
+    width: '100%',
+    maxWidth: 580,
+    maxHeight: '92%',
+    borderRadius: BorderRadius.xl,
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column',
+    ...Shadows.large,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.surface,
+  },
+  modalTitle: { fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.text },
+  modalSubtitle: { fontSize: 11, color: Colors.textSecondary, marginTop: 1 },
+  modalCloseBtn: {
+    padding: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.background,
+  },
+  modalScrollBody: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    padding: Spacing.md,
+    gap: Spacing.md,
+  },
+  cardSection: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    ...Shadows.small,
+  },
+  sectionTitle: {
+    fontSize: Fonts.sizes.sm,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  subSectionBox: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  subSectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  presetNameScroll: {
+    flexDirection: 'row',
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  presetChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+    marginRight: 6,
+  },
+  presetChipActive: {
+    borderColor: Colors.secondary,
+    backgroundColor: Colors.secondaryBg,
+  },
+  presetChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  presetChipTextActive: {
+    color: Colors.secondary,
+    fontWeight: '700',
+  },
+  modalInput: { backgroundColor: Colors.surface, marginBottom: Spacing.xs, marginTop: Spacing.xs },
+  mapButtonsRow: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs, marginBottom: Spacing.xs },
   pickerBtn: { borderRadius: BorderRadius.md },
-  coordRow: { flexDirection: 'row', gap: Spacing.sm },
-  sectionDivider: { height: 1, backgroundColor: Colors.borderLight, marginVertical: Spacing.md },
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
+  coordRow: { flexDirection: 'row', gap: Spacing.xs, marginTop: Spacing.xs },
+  sectionDivider: { height: 1, backgroundColor: Colors.borderLight, marginVertical: Spacing.sm },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   sectionLabel: { fontSize: 13, fontWeight: '800', color: Colors.text },
-  sectionSubtext: { fontSize: 11, color: Colors.textSecondary, marginBottom: Spacing.sm },
-  quickDayRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.sm },
+  sectionSubtext: { fontSize: 11, color: Colors.textSecondary, marginBottom: Spacing.xs },
+  quickDayRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.xs, marginTop: Spacing.xs },
   quickDayBtn: {
     flex: 1,
-    paddingVertical: 7,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.border,
     alignItems: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
   },
   quickDayBtnActive: {
     borderColor: Colors.secondary,
     backgroundColor: Colors.secondaryBg,
   },
   quickDayBtnText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
     color: Colors.textSecondary,
   },
@@ -1075,15 +1299,16 @@ const styles = StyleSheet.create({
   daysChipsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: Spacing.md,
+    gap: 5,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
   },
   dayChip: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: BorderRadius.full,
     borderWidth: 1,
   },
@@ -1096,11 +1321,11 @@ const styles = StyleSheet.create({
     borderColor: '#7C3AED',
   },
   dayChipUnselected: {
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
     borderColor: Colors.border,
   },
   dayChipText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
   dayChipTextSelected: {
@@ -1110,15 +1335,15 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   resetOptionsContainer: {
-    gap: 8,
-    marginBottom: Spacing.md,
+    gap: 6,
+    marginTop: Spacing.xs,
   },
   resetOptionCard: {
-    padding: 10,
+    padding: 8,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
   },
   resetOptionCardSelected: {
     borderColor: Colors.secondary,
@@ -1127,11 +1352,11 @@ const styles = StyleSheet.create({
   resetOptionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     marginBottom: 2,
   },
   resetOptionLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
     color: Colors.text,
   },
@@ -1141,14 +1366,47 @@ const styles = StyleSheet.create({
   resetOptionDesc: {
     fontSize: 10,
     color: Colors.textSecondary,
-    marginLeft: 26,
+    marginLeft: 24,
   },
   templatesLabel: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary, marginBottom: Spacing.xs },
-  templateChipsScroll: { flexDirection: 'row', marginBottom: Spacing.md },
+  templateChipsScroll: { flexDirection: 'row', marginBottom: Spacing.xs, marginTop: Spacing.xs },
   templateChip: { marginRight: Spacing.xs, backgroundColor: Colors.background },
-  tagsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginBottom: Spacing.md, marginTop: -Spacing.xs },
+  tagsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.xs },
   tagBadge: { backgroundColor: Colors.secondaryBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   tagText: { fontSize: 11, color: Colors.secondary, fontWeight: '700' },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: Spacing.md, marginTop: Spacing.md },
-  modalBtn: { borderRadius: BorderRadius.md },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+    backgroundColor: Colors.surface,
+  },
+  footerBtn: {
+    borderRadius: BorderRadius.md,
+  },
+  
+  // Generic Modal (Assign Contacts)
+  modal: {
+    backgroundColor: Colors.surface,
+    margin: Spacing.md,
+    maxWidth: 520,
+    maxHeight: '88%',
+    alignSelf: 'center',
+    width: '92%',
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+  },
+  contactCheckRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  contactRowName: { fontSize: Fonts.sizes.md, fontWeight: '600', color: Colors.text },
+  contactRowPhone: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary },
 });

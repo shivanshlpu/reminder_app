@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
+  Image,
 } from 'react-native';
 import { TextInput, Button } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -51,9 +52,11 @@ export default function LoginScreen() {
         <View style={styles.card}>
           {/* Logo / Header */}
           <View style={styles.logoContainer}>
-            <View style={styles.iconCircle}>
-              <MaterialCommunityIcons name="wallet-outline" size={40} color={Colors.primary} />
-            </View>
+            <Image
+              source={require('../../assets/icon.png')}
+              style={styles.appLogo}
+              resizeMode="contain"
+            />
             <Text style={styles.title}>PocketRadar</Text>
             <Text style={styles.subtitle}>GPS Gate Radar, Smart Khata & Expenses</Text>
           </View>
@@ -145,6 +148,13 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     marginBottom: Spacing.xxl,
+  },
+  appLogo: {
+    width: 88,
+    height: 88,
+    borderRadius: 22,
+    marginBottom: Spacing.md,
+    ...Shadows.medium,
   },
   iconCircle: {
     width: 76,
