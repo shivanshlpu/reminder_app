@@ -151,6 +151,8 @@ export default function ExpensesScreen() {
     }
   };
 
+  const filteredTotal = expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
   const renderExpenseItem = (item: Expense) => (
     <TouchableOpacity
       key={item.id}
@@ -171,7 +173,7 @@ export default function ExpensesScreen() {
         {item.note && <Text style={styles.expenseNote} numberOfLines={1}>{item.note}</Text>}
       </View>
       <View style={styles.amountWrap}>
-        <Text style={styles.expenseAmount}>-Rs. {item.amount.toLocaleString('en-IN')}</Text>
+        <Text style={styles.expenseAmount}>-₹{item.amount.toLocaleString('en-IN')}</Text>
         <TouchableOpacity
           onPress={(e) => {
             e.stopPropagation?.();
@@ -187,10 +189,11 @@ export default function ExpensesScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Top Search & Filter Bar */}
       <View style={styles.topBar}>
-        <View style={styles.searchWrap}>
+        <View style={styles.searchRow}>
           <TextInput
-            placeholder="Search expenses..."
+            placeholder="Search expenses / notes..."
             value={searchText}
             onChangeText={(text) => {
               setSearchText(text);
@@ -203,62 +206,122 @@ export default function ExpensesScreen() {
             activeOutlineColor={Colors.primary}
             textColor={Colors.text}
             left={<TextInput.Icon icon="magnify" color={Colors.textSecondary} />}
+            right={
+              searchText ? (
+                <TextInput.Icon
+                  icon="close-circle"
+                  color={Colors.textSecondary}
+                  onPress={() => {
+                    setSearchText('');
+                    fetchExpenses({ categoryId: filterCategory, searchText: '' });
+                  }}
+                />
+              ) : undefined
+            }
             theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
           />
-        </View>
-        <View style={styles.exportBtnGroup}>
-          <Button
-            mode="contained"
-            buttonColor={Colors.primary}
-            textColor="#FFFFFF"
+          <TouchableOpacity
+            style={styles.exportIconBtn}
             onPress={handleExportPdf}
-            icon="file-pdf-box"
-            style={styles.exportBtn}
-            labelStyle={{ fontSize: 12, fontWeight: '700' }}
+            activeOpacity={0.8}
           >
-            PDF Report
-          </Button>
-          <Button
-            mode="outlined"
-            textColor={Colors.text}
+            <MaterialCommunityIcons name="file-pdf-box" size={20} color="#FFFFFF" />
+            <Text style={styles.exportBtnLabel}>PDF</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.exportIconBtnOutlined}
             onPress={handleExportExcel}
-            icon="file-excel"
-            style={styles.exportBtnOutlined}
-            labelStyle={{ fontSize: 12 }}
+            activeOpacity={0.8}
           >
-            CSV
-          </Button>
+            <MaterialCommunityIcons name="file-excel" size={18} color={Colors.text} />
+            <Text style={styles.exportBtnLabelOutlined}>CSV</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Category Filters Horizontal Scroll */}
+        <View style={styles.categoryFilterContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScrollContent}
+          >
+            <TouchableOpacity
+              style={[
+                styles.customFilterChip,
+                filterCategory === undefined && styles.customFilterChipActive,
+              ]}
+              onPress={() => {
+                setFilterCategory(undefined);
+                fetchExpenses({ searchText });
+              }}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons
+                name="view-grid-outline"
+                size={16}
+                color={filterCategory === undefined ? '#FFFFFF' : Colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.filterChipText,
+                  filterCategory === undefined && styles.filterChipTextActive,
+                ]}
+              >
+                All
+              </Text>
+            </TouchableOpacity>
+
+            {categories.map((cat) => {
+              const isActive = filterCategory === cat.id;
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.customFilterChip,
+                    isActive && styles.customFilterChipActive,
+                  ]}
+                  onPress={() => {
+                    const newFilter = isActive ? undefined : cat.id;
+                    setFilterCategory(newFilter);
+                    fetchExpenses({ categoryId: newFilter, searchText });
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons
+                    name={(cat.icon as any) || 'cash'}
+                    size={16}
+                    color={isActive ? '#FFFFFF' : cat.color || Colors.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      isActive && styles.filterChipTextActive,
+                    ]}
+                  >
+                    {cat.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Summary Counter & Total Filtered Amount */}
+        <View style={styles.summaryBar}>
+          <Text style={styles.summaryCount}>
+            {expenses.length} {expenses.length === 1 ? 'transaction' : 'transactions'}
+            {filterCategory !== undefined && (
+              <Text style={{ fontWeight: '700', color: Colors.primary }}>
+                {' '}• {categories.find((c) => c.id === filterCategory)?.name || 'Filtered'}
+              </Text>
+            )}
+          </Text>
+          <View style={styles.summaryAmountBadge}>
+            <Text style={styles.summaryTotalLabel}>Total:</Text>
+            <Text style={styles.summaryTotalValue}>₹{filteredTotal.toLocaleString('en-IN')}</Text>
+          </View>
         </View>
       </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
-        <Chip
-          selected={filterCategory === undefined}
-          onPress={() => {
-            setFilterCategory(undefined);
-            fetchExpenses({ searchText });
-          }}
-          style={[styles.filterChip, filterCategory === undefined && styles.filterChipActive]}
-          textStyle={{ color: filterCategory === undefined ? Colors.primary : Colors.textSecondary, fontWeight: '600' }}
-        >
-          All
-        </Chip>
-        {categories.map((cat) => (
-          <Chip
-            key={cat.id}
-            selected={filterCategory === cat.id}
-            onPress={() => {
-              const newFilter = filterCategory === cat.id ? undefined : cat.id;
-              setFilterCategory(newFilter);
-              fetchExpenses({ categoryId: newFilter, searchText });
-            }}
-            style={[styles.filterChip, filterCategory === cat.id && styles.filterChipActive]}
-            textStyle={{ color: filterCategory === cat.id ? Colors.primary : Colors.textSecondary, fontWeight: '600' }}
-          >
-            {cat.name}
-          </Chip>
-        ))}
-      </ScrollView>
 
       <ScrollView
         contentContainerStyle={styles.listContent}
@@ -364,16 +427,125 @@ export default function ExpensesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  topBar: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, gap: Spacing.sm },
-  searchWrap: { flex: 1 },
-  searchInput: { backgroundColor: Colors.surface },
-  exportBtnGroup: { flexDirection: 'row', gap: Spacing.sm },
-  exportBtn: { borderRadius: BorderRadius.md, flex: 1 },
-  exportBtnOutlined: { borderRadius: BorderRadius.md, borderColor: Colors.border },
-  filterScroll: { maxHeight: 52, marginVertical: Spacing.xs },
-  filterContent: { paddingHorizontal: Spacing.lg, alignItems: 'center', gap: Spacing.xs },
-  filterChip: { backgroundColor: Colors.surface, borderColor: Colors.border },
-  filterChipActive: { backgroundColor: Colors.primary + '15', borderColor: Colors.primary },
+  topBar: {
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+    gap: Spacing.sm,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    height: 42,
+  },
+  exportIconBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+    height: 42,
+    justifyContent: 'center',
+    ...Shadows.small,
+  },
+  exportBtnLabel: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  exportIconBtnOutlined: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+    height: 42,
+    justifyContent: 'center',
+  },
+  exportBtnLabelOutlined: {
+    color: Colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  categoryFilterContainer: {
+    paddingVertical: 4,
+  },
+  filterScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: Spacing.lg,
+  },
+  customFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 7,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  customFilterChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+    ...Shadows.small,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  summaryBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 2,
+    paddingBottom: 2,
+  },
+  summaryCount: {
+    fontSize: 11.5,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  summaryAmountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.primaryBg,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+  },
+  summaryTotalLabel: {
+    fontSize: 10.5,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  summaryTotalValue: {
+    fontSize: 12.5,
+    color: Colors.primary,
+    fontWeight: '800',
+  },
   listContent: { padding: Spacing.lg, paddingBottom: 100 },
   gridDesktop: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.md },
   expenseCard: {
