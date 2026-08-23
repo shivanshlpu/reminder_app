@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useGlobalGeofence } from '../hooks/useGlobalGeofence';
+import { parseResetHour } from '../services/geofence';
 import { showMessage } from '../utils/dialogs';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../constants/theme';
 
@@ -119,6 +120,13 @@ export function GeofenceRadarBanner({ onPressManage, showTestButton = true }: Ge
 
   // State 3: Active Monitoring Radar & 24/7 Background Service
   const nearest = proximity.nearestRegion;
+  const now = new Date();
+  const resetParsed = nearest ? parseResetHour(nearest.resetTime) : { hour: 0, minute: 0 };
+  const isBeforeResetToday =
+    nearest &&
+    (now.getHours() < resetParsed.hour ||
+      (now.getHours() === resetParsed.hour && now.getMinutes() < resetParsed.minute));
+  const isMorningBeforeNoonReset = isBeforeResetToday && resetParsed.hour >= 11;
 
   return (
     <View style={[styles.container, styles.activeCard]}>
@@ -172,7 +180,9 @@ export function GeofenceRadarBanner({ onPressManage, showTestButton = true }: Ge
               style={[
                 styles.badge,
                 !nearest.isActiveToday
-                  ? styles.badgeInactive
+                  ? isMorningBeforeNoonReset
+                    ? styles.badgeWaiting
+                    : styles.badgeInactive
                   : nearest.triggeredToday
                   ? styles.badgeTriggered
                   : styles.badgeReady,
@@ -182,14 +192,18 @@ export function GeofenceRadarBanner({ onPressManage, showTestButton = true }: Ge
                 style={[
                   styles.badgeText,
                   !nearest.isActiveToday
-                    ? styles.badgeTextInactive
+                    ? isMorningBeforeNoonReset
+                      ? styles.badgeTextWaiting
+                      : styles.badgeTextInactive
                     : nearest.triggeredToday
                     ? styles.badgeTextTriggered
                     : styles.badgeTextReady,
                 ]}
               >
                 {!nearest.isActiveToday
-                  ? '⏸️ Off Today (Weekend)'
+                  ? isMorningBeforeNoonReset
+                    ? `⏳ Resets today at ${nearest.resetTime || '12:00 PM'}`
+                    : '⏸️ Off Today (Weekend)'
                   : nearest.triggeredToday
                   ? '🔒 Sent in 24h Cycle (1/1)'
                   : `⚡ 24h Cycle Ready (0/1) • Resets ${nearest.resetTime || '12:00 AM'}`}
@@ -412,6 +426,11 @@ const styles = StyleSheet.create({
   badgeInactive: {
     backgroundColor: '#FEF3C7',
   },
+  badgeWaiting: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 0.5,
+  },
   badgeText: {
     fontSize: 10,
     fontWeight: '700',
@@ -424,6 +443,9 @@ const styles = StyleSheet.create({
   },
   badgeTextInactive: {
     color: '#B45309',
+  },
+  badgeTextWaiting: {
+    color: '#1D4ED8',
   },
   resetBtn: {
     paddingHorizontal: 6,

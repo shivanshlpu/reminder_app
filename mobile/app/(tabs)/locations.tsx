@@ -35,6 +35,8 @@ import {
   recordLocationTriggeredToday,
   resetLocationDailyTrigger,
   isLocationActiveOnDay,
+  isLocationActiveInCycle,
+  parseResetHour,
   getLocationCycleKey,
 } from '../../services/geofence';
 import { MapPickerModal } from '../../components/MapPickerModal';
@@ -54,7 +56,7 @@ const ALL_DAYS = [
 ];
 
 const RESET_TIME_OPTIONS = [
-  { value: '12:00 PM', label: '☀️ 12:00 PM (Noon - Home)', desc: 'Resets at noon. Will NOT reset at midnight 12 AM while sleeping at home!' },
+  { value: '12:00 PM', label: '☀️ 12:00 PM (Noon - Home)', desc: 'Resets at 12:00 PM noon. Prevents midnight & Monday morning false alarms while at home!' },
   { value: '12:00 AM', label: '🌙 12:00 AM (Midnight - College)', desc: 'Resets overnight for morning college arrivals' },
   { value: '06:00 AM', label: '🌅 06:00 AM (Morning)', desc: 'Resets early morning before heading out' },
 ];
@@ -508,10 +510,17 @@ export default function LocationsScreen() {
   };
 
   const renderLocationCard = (item: PinnedLocation) => {
-    const cycleKey = getLocationCycleKey(item.reset_time);
+    const now = new Date();
+    const cycleKey = getLocationCycleKey(item.reset_time, now);
     const isTriggeredInCycle = dailyTriggerMap[item.id] === cycleKey;
-    const isActiveToday = isLocationActiveOnDay(item.active_days);
+    const isActiveInCycle = isLocationActiveInCycle(item.active_days, item.reset_time, now);
     const daysSummary = formatDaysSummary(item.active_days);
+
+    const { hour: resetH, minute: resetM } = parseResetHour(item.reset_time);
+    const nowH = now.getHours();
+    const nowM = now.getMinutes();
+    const isBeforeResetToday = nowH < resetH || (nowH === resetH && nowM < resetM);
+    const isMorningBeforeNoonReset = isBeforeResetToday && resetH >= 11;
 
     return (
       <View key={item.id} style={[styles.locationCard, isWide && styles.locationCardDesktop]}>
@@ -554,7 +563,7 @@ export default function LocationsScreen() {
           <View
             style={[
               styles.dailyStatusBadge,
-              !isActiveToday
+              !isActiveInCycle
                 ? styles.dailyStatusBadgeInactive
                 : isTriggeredInCycle
                 ? styles.dailyStatusBadgeSent
@@ -562,22 +571,42 @@ export default function LocationsScreen() {
             ]}
           >
             <MaterialCommunityIcons
-              name={!isActiveToday ? 'pause-circle-outline' : isTriggeredInCycle ? 'check-decagram' : 'clock-check-outline'}
+              name={
+                !isActiveInCycle
+                  ? isMorningBeforeNoonReset
+                    ? 'clock-outline'
+                    : 'pause-circle-outline'
+                  : isTriggeredInCycle
+                  ? 'check-decagram'
+                  : 'clock-check-outline'
+              }
               size={14}
-              color={!isActiveToday ? '#B45309' : isTriggeredInCycle ? Colors.success : Colors.secondary}
+              color={
+                !isActiveInCycle
+                  ? isMorningBeforeNoonReset
+                    ? Colors.primary
+                    : '#B45309'
+                  : isTriggeredInCycle
+                  ? Colors.success
+                  : Colors.secondary
+              }
             />
             <Text
               style={[
                 styles.dailyStatusText,
-                !isActiveToday
-                  ? { color: '#B45309' }
+                !isActiveInCycle
+                  ? isMorningBeforeNoonReset
+                    ? { color: Colors.primary }
+                    : { color: '#B45309' }
                   : isTriggeredInCycle
                   ? { color: Colors.success }
                   : { color: Colors.secondary },
               ]}
             >
-              {!isActiveToday
-                ? 'Inactive Today (Weekend / Off-day)'
+              {!isActiveInCycle
+                ? isMorningBeforeNoonReset
+                  ? `Resets today at ${item.reset_time || '12:00 PM'}`
+                  : 'Inactive Today (Weekend / Off-day)'
                 : isTriggeredInCycle
                 ? 'Sent in this 24h Cycle (1/1 Done)'
                 : '24h Cycle Ready (0/1 Auto-Alert)'}

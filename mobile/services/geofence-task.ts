@@ -87,22 +87,64 @@ export function parseResetHour(resetTime?: string): { hour: number; minute: numb
  * - Aug 20 at 12:00 AM (midnight): STILL in cycle started Aug 19 at 12:00 PM -> "2026-08-19_12:00" (NO MIDNIGHT TRIGGER!)
  * - Aug 20 at 02:00 PM: belongs to cycle started Aug 20 at 12:00 PM -> "2026-08-20_12:00"
  */
-export function getLocationCycleKey(resetTime?: string, date: Date = new Date()): string {
+export function getCycleStartDate(resetTime?: string, date: Date = new Date()): Date {
   const { hour: resetH, minute: resetM } = parseResetHour(resetTime);
   const nowH = date.getHours();
   const nowM = date.getMinutes();
 
-  // Check if current time is before the reset time today
   const isBeforeResetToday = nowH < resetH || (nowH === resetH && nowM < resetM);
 
-  let cycleStartDate: Date;
   if (isBeforeResetToday) {
-    // Started yesterday at reset time
-    cycleStartDate = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+    // Current time belongs to cycle that started yesterday at reset time
+    const yesterday = new Date(date.getTime() - 24 * 60 * 60 * 1000);
+    return new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), resetH, resetM, 0, 0);
   } else {
-    // Started today at reset time
-    cycleStartDate = date;
+    // Current time belongs to cycle that started today at reset time
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate(), resetH, resetM, 0, 0);
   }
+}
+
+/**
+ * Checks whether a given location is active in its current 24-hour cycle.
+ * 
+ * Prevents Monday Morning False Alarms:
+ * 1. For locations with a 12:00 PM reset (Home), the Sunday cycle runs Sunday 12 PM -> Monday 11:59 AM.
+ *    If Sunday is an inactive day (weekend off), Sunday's cycle must NOT fire on Monday morning.
+ * 2. Furthermore, for 12:00 PM reset locations, Monday's arrival alert strictly resets and arms at 12:00 PM.
+ *    Waking up / being at home on Monday morning (before 12:00 PM) will never trigger a false arrival alarm.
+ */
+export function isLocationActiveInCycle(
+  activeDays?: string | string[],
+  resetTime?: string,
+  date: Date = new Date()
+): boolean {
+  const cycleStartDate = getCycleStartDate(resetTime, date);
+
+  // 1. Check if the day this cycle started on is an active day
+  if (!isLocationActiveOnDay(activeDays, cycleStartDate)) {
+    return false;
+  }
+
+  // 2. Next-day morning guard for afternoon-reset locations (e.g. 12:00 PM Home reset):
+  // If reset time is in the afternoon/noon (resetH >= 11) and current time is the next calendar morning
+  // before today's reset time (e.g. Monday 00:00 - 11:59 AM), waking up at home must NOT trigger yesterday's cycle.
+  // Today's cycle for this location will strictly reset and become active at 12:00 PM today.
+  const { hour: resetH, minute: resetM } = parseResetHour(resetTime);
+  const nowH = date.getHours();
+  const nowM = date.getMinutes();
+  const isBeforeResetToday = nowH < resetH || (nowH === resetH && nowM < resetM);
+
+  if (isBeforeResetToday && resetH >= 11) {
+    // Current time is morning before noon reset (e.g. Monday 7:00 AM before 12:00 PM reset)
+    return false;
+  }
+
+  return true;
+}
+
+export function getLocationCycleKey(resetTime?: string, date: Date = new Date()): string {
+  const { hour: resetH, minute: resetM } = parseResetHour(resetTime);
+  const cycleStartDate = getCycleStartDate(resetTime, date);
 
   const year = cycleStartDate.getFullYear();
   const month = String(cycleStartDate.getMonth() + 1).padStart(2, '0');
@@ -155,10 +197,13 @@ async function processBackgroundArrival(
 ): Promise<void> {
   const now = new Date();
 
-  // 1. Day of Week Guard (e.g. skip weekends for College)
-  if (!isLocationActiveOnDay(region.activeDays, now)) {
-    const dayName = now.toLocaleDateString('en-IN', { weekday: 'long' });
-    console.log(`[Background Geofence] ⏸️ Skipped ${region.name}: Inactive on ${dayName} (Weekend/Disabled day)`);
+  // 1. Cycle-Aware Day & Morning Reset Guard (prevents Monday morning false alarm after weekend)
+  if (!isLocationActiveInCycle(region.activeDays, region.resetTime, now)) {
+    const cycleDate = getCycleStartDate(region.resetTime, now);
+    const dayName = cycleDate.toLocaleDateString('en-IN', { weekday: 'long' });
+    console.log(
+      `[Background Geofence] ⏸️ Skipped ${region.name}: Inactive in current cycle (Cycle started on ${dayName}, resets at ${region.resetTime || '12:00 AM'})`
+    );
     return;
   }
 

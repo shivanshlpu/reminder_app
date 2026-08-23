@@ -24,6 +24,8 @@ import {
   calculateDistanceMeters,
   isLocationActiveOnDay,
   parseResetHour,
+  getCycleStartDate,
+  isLocationActiveInCycle,
   getLocationCycleKey,
   DAY_KEYS,
 } from './geofence-task';
@@ -33,6 +35,8 @@ export {
   calculateDistanceMeters,
   isLocationActiveOnDay,
   parseResetHour,
+  getCycleStartDate,
+  isLocationActiveInCycle,
   getLocationCycleKey,
   DAY_KEYS,
 };
@@ -241,11 +245,18 @@ export async function triggerArrivalAlert(
   await loadDailyTriggers();
   const now = new Date();
 
-  // 1. Day of Week Filter Check (e.g. skip weekends for College)
-  if (!isManualTest && !isLocationActiveOnDay(region.activeDays, now)) {
-    const dayName = now.toLocaleDateString('en-IN', { weekday: 'long' });
-    console.log(`📍 Geofence Guard: "${region.name}" is inactive on ${dayName} (Weekend / Off-day).`);
-    return { success: false, recipientCount: 0, message: `Inactive today on ${dayName} (Weekend/Off-day)` };
+  // 1. Cycle-Aware Day of Week & Morning Reset Guard (e.g. skip weekends, and prevent Monday morning false alarms)
+  if (!isManualTest && !isLocationActiveInCycle(region.activeDays, region.resetTime, now)) {
+    const cycleDate = getCycleStartDate(region.resetTime, now);
+    const dayName = cycleDate.toLocaleDateString('en-IN', { weekday: 'long' });
+    console.log(
+      `📍 Geofence Guard: "${region.name}" is inactive in current cycle (Cycle started on ${dayName}, resets at ${region.resetTime || '12:00 AM'}).`
+    );
+    return {
+      success: false,
+      recipientCount: 0,
+      message: `Inactive in current cycle (Cycle day: ${dayName}, resets at ${region.resetTime || '12:00 AM'})`,
+    };
   }
 
   const cycleKey = getLocationCycleKey(region.resetTime, now);
@@ -470,7 +481,7 @@ export function getCurrentProximityStatus(): ProximityStatus {
         minDistance = distance;
         const radius = region.radius || DEFAULT_GEOFENCE_RADIUS;
         const cycleKey = getLocationCycleKey(region.resetTime, now);
-        const isActiveToday = isLocationActiveOnDay(region.activeDays, now);
+        const isActiveToday = isLocationActiveInCycle(region.activeDays, region.resetTime, now);
 
         nearestRegion = {
           id: region.id,
