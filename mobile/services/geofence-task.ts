@@ -25,7 +25,7 @@ export interface StoredGeofenceRegion {
   messageTemplate: string;
   activeDays?: string | string[];
   resetTime?: string;
-  contacts: Array<{ phone: string; isGroup: boolean; name: string; contactId: number }>;
+  contacts: Array<{ phone: string; isGroup: boolean; name: string; contactId: number; priority?: number }>;
 }
 
 export const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
@@ -245,10 +245,14 @@ async function processBackgroundArrival(
 
   let sentCount = 0;
 
-  // Dispatch WhatsApp sequentially with 1.5s delay to prevent spam blocks
+  // Dispatch WhatsApp sequentially in strict priority order with 1.5s pause to prevent spam blocks
   if (region.contacts && region.contacts.length > 0) {
-    for (let i = 0; i < region.contacts.length; i++) {
-      const contact = region.contacts[i];
+    const sortedContacts = [...region.contacts].sort(
+      (a, b) => (a.priority || 1) - (b.priority || 1)
+    );
+
+    for (let i = 0; i < sortedContacts.length; i++) {
+      const contact = sortedContacts[i];
       if (i > 0) {
         await new Promise((res) => setTimeout(res, 1500));
       }
@@ -260,6 +264,7 @@ async function processBackgroundArrival(
           messageText
         );
         sentCount++;
+        console.log(`[Background Geofence] WhatsApp alert dispatched to [Priority ${contact.priority || 1}] ${contact.name}`);
       } catch (err) {
         console.error(`[Background Geofence] WhatsApp send error to ${contact.name}:`, err);
       }

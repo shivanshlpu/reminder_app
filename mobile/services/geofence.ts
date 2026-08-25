@@ -53,7 +53,7 @@ export interface GeofenceRegion {
   messageTemplate: string;
   activeDays?: string | string[];
   resetTime?: string;
-  contacts: Array<{ phone: string; isGroup: boolean; name: string; contactId: number }>;
+  contacts: Array<{ phone: string; isGroup: boolean; name: string; contactId: number; priority?: number }>;
 }
 
 export interface ProximityStatus {
@@ -283,10 +283,14 @@ export async function triggerArrivalAlert(
 
   let sentCount = 0;
 
-  // Send WhatsApp message sequentially with 1.5s delay to prevent WhatsApp rate-limit / spam blocks
+  // Send WhatsApp messages sequentially in strict priority order with 1.5s pause to prevent spam/rate blocks
   if (region.contacts && region.contacts.length > 0) {
-    for (let i = 0; i < region.contacts.length; i++) {
-      const contact = region.contacts[i];
+    const sortedContacts = [...region.contacts].sort(
+      (a, b) => (a.priority || 1) - (b.priority || 1)
+    );
+
+    for (let i = 0; i < sortedContacts.length; i++) {
+      const contact = sortedContacts[i];
 
       if (i > 0) {
         // Safe 1.5s delay between recipients to prevent WhatsApp rate-limiting
@@ -301,7 +305,7 @@ export async function triggerArrivalAlert(
           messageText
         );
         sentCount++;
-        console.log(`✅ WhatsApp alert sent to ${contact.name} (${contact.phone}) for ${region.name}`);
+        console.log(`✅ WhatsApp alert sent to [Priority ${contact.priority || 1}] ${contact.name} (${contact.phone}) for ${region.name}`);
       } catch (err) {
         console.error(`Failed to send WhatsApp alert to ${contact.name}:`, err);
       }

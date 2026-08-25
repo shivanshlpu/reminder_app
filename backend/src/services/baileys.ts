@@ -173,18 +173,22 @@ class BaileysService {
    * Normalize and sanitize phone number into proper WhatsApp JID.
    */
   private normalizeRecipient(recipient: string, isGroup: boolean): string {
+    if (!recipient) return '';
+    const trimmed = String(recipient).trim();
     if (isGroup) {
-      return recipient.includes('@g.us') ? recipient : `${recipient}@g.us`;
+      return trimmed.includes('@g.us') ? trimmed : `${trimmed.replace(/[^0-9\-@]/g, '')}@g.us`;
     }
 
-    let clean = recipient.replace(/\D/g, '');
+    // Strip everything except digits
+    let clean = trimmed.replace(/\D/g, '');
+
+    // Remove leading zeros (e.g. 09876543210 -> 9876543210)
+    clean = clean.replace(/^0+/, '');
 
     // If 10 digits (standard Indian number without country code), prepend 91
     if (clean.length === 10) {
       clean = `91${clean}`;
     }
-
-    clean = clean.replace(/^0+/, '');
 
     return clean.includes('@s.whatsapp.net') ? clean : `${clean}@s.whatsapp.net`;
   }
@@ -206,15 +210,23 @@ class BaileysService {
 
     try {
       const jid = this.normalizeRecipient(recipient, isGroup);
+      if (!jid) {
+        return {
+          success: false,
+          error: 'Invalid recipient phone number or group ID.',
+        };
+      }
 
       let targetJid = jid;
       if (!isGroup) {
         try {
           const results = await this.sock.onWhatsApp(jid);
-          if (results && results.length > 0 && results[0].exists) {
+          if (results && results.length > 0 && results[0].exists && results[0].jid) {
             targetJid = results[0].jid;
           }
-        } catch (e) {}
+        } catch (e) {
+          logger.warn({ error: e, jid }, 'onWhatsApp query notice — using normalized JID');
+        }
       }
 
       const sendResult = await this.sock.sendMessage(targetJid, { text: message });

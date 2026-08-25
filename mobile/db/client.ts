@@ -22,7 +22,7 @@ interface LocalStorageDBData {
   expenses: Array<{ id: number; user_id: string; category_id: number; amount: number; date: string; note: string | null; created_at: number; updated_at: number }>;
   pinned_locations: Array<{ id: number; user_id: string; name: string; latitude: number; longitude: number; radius: number; auto_send: number; message_template: string; active_days?: string; reset_time?: string; created_at: number }>;
   contacts: Array<{ id: number; user_id: string; name: string; phone: string; is_group: number; group_id: string | null; created_at: number }>;
-  location_contacts: Array<{ id: number; location_id: number; contact_id: number }>;
+  location_contacts: Array<{ id: number; location_id: number; contact_id: number; priority?: number }>;
   message_logs: Array<{ id: number; user_id: string; location_id: number | null; contact_id: number | null; location_name: string; recipient_name: string; recipient_phone: string; message_content: string; status: string; error_message: string | null; sent_at: number }>;
   loans: Array<{ id: number; user_id: string; person_name: string; person_phone: string; type: 'lent' | 'borrowed'; amount: number; amount_repaid: number; date: string; due_date: string | null; note: string | null; status: 'pending' | 'partially_paid' | 'settled'; auto_notify: number; created_at: number; updated_at: number }>;
   autoIncrement: {
@@ -352,17 +352,39 @@ class AsyncStorageDatabase implements IDatabase {
     }
 
     // 12. Location contacts
-    if (/^INSERT\s+OR\s+IGNORE\s+INTO\s+location_contacts/i.test(cleanSql)) {
-      const [location_id, contact_id] = params;
-      if (!this.data.location_contacts.some((lc) => lc.location_id === Number(location_id) && lc.contact_id === Number(contact_id))) {
+    if (/^INSERT\s+OR\s+(IGNORE|REPLACE)\s+INTO\s+location_contacts/i.test(cleanSql) || /^INSERT\s+INTO\s+location_contacts/i.test(cleanSql)) {
+      const [location_id, contact_id, priority] = params;
+      const prioVal = priority !== undefined ? Number(priority) : 1;
+      const existing = this.data.location_contacts.find(
+        (lc) => lc.location_id === Number(location_id) && lc.contact_id === Number(contact_id)
+      );
+      if (existing) {
+        existing.priority = prioVal;
+        this.scheduleSave();
+        return { lastInsertRowId: existing.id, changes: 1 };
+      } else {
+        const id = this.data.autoIncrement.location_contacts++;
         this.data.location_contacts.push({
-          id: this.data.autoIncrement.location_contacts++,
+          id,
           location_id: Number(location_id),
           contact_id: Number(contact_id),
+          priority: prioVal,
         });
         this.scheduleSave();
+        return { lastInsertRowId: id, changes: 1 };
       }
-      return { lastInsertRowId: 1, changes: 1 };
+    }
+    if (/^UPDATE\s+location_contacts/i.test(cleanSql)) {
+      const [priority, location_id, contact_id] = params;
+      const existing = this.data.location_contacts.find(
+        (lc) => lc.location_id === Number(location_id) && lc.contact_id === Number(contact_id)
+      );
+      if (existing) {
+        existing.priority = Number(priority) || 1;
+        this.scheduleSave();
+        return { lastInsertRowId: existing.id, changes: 1 };
+      }
+      return { lastInsertRowId: 0, changes: 0 };
     }
     if (/^DELETE\s+FROM\s+location_contacts/i.test(cleanSql)) {
       if (cleanSql.includes('location_id = ? AND contact_id = ?')) {
@@ -663,14 +685,25 @@ class AsyncStorageDatabase implements IDatabase {
       return locs as unknown as T[];
     }
 
-    // Location assigned contacts query (INNER JOIN)
+    // Location assigned contacts query (INNER JOIN with priority)
     if (/FROM\s+contacts\s+c\s+INNER\s+JOIN\s+location_contacts/i.test(cleanSql)) {
       const [location_id] = params;
-      const assignedContactIds = this.data.location_contacts
+      const assigned = this.data.location_contacts
         .filter((lc) => lc.location_id === Number(location_id))
-        .map((lc) => lc.contact_id);
-      const contacts = this.data.contacts.filter((c) => assignedContactIds.includes(c.id));
-      return contacts as unknown as T[];
+        .sort((a, b) => (a.priority || 1) - (b.priority || 1) || a.id - b.id);
+      
+      const contactsWithPriority = assigned
+        .map((lc) => {
+          const c = this.data.contacts.find((contact) => contact.id === lc.contact_id);
+          if (!c) return null;
+          return {
+            ...c,
+            priority: lc.priority || 1,
+          };
+        })
+        .filter(Boolean);
+
+      return contactsWithPriority as unknown as T[];
     }
 
     // Contacts query
@@ -793,7 +826,8 @@ async function initializeSqliteSchema(db: any): Promise<void> {
     CREATE TABLE IF NOT EXISTS location_contacts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       location_id INTEGER NOT NULL,
-      contact_id INTEGER NOT NULL
+      contact_id INTEGER NOT NULL,
+      priority INTEGER DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS message_logs (
@@ -845,5 +879,8 @@ async function initializeSqliteSchema(db: any): Promise<void> {
   } catch (e) {}
   try {
     await db.execAsync("ALTER TABLE pinned_locations ADD COLUMN reset_time TEXT DEFAULT '12:00 AM';");
+  } catch (e) {}
+  try {
+    await db.execAsync("ALTER TABLE location_contacts ADD COLUMN priority INTEGER DEFAULT 1;");
   } catch (e) {}
 }

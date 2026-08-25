@@ -88,11 +88,20 @@ export function useLocations() {
     await fetchLocations(false);
   }, [db, user, fetchLocations]);
 
-  const assignContact = useCallback(async (locationId: number, contactId: number) => {
+  const assignContact = useCallback(async (locationId: number, contactId: number, priority: number = 1) => {
     if (!db) return;
     await db.runAsync(
-      'INSERT OR IGNORE INTO location_contacts (location_id, contact_id) VALUES (?, ?)',
-      [locationId, contactId]
+      'INSERT OR REPLACE INTO location_contacts (location_id, contact_id, priority) VALUES (?, ?, ?)',
+      [locationId, contactId, priority]
+    );
+    await fetchLocations(false);
+  }, [db, fetchLocations]);
+
+  const updateContactPriority = useCallback(async (locationId: number, contactId: number, priority: number) => {
+    if (!db) return;
+    await db.runAsync(
+      'UPDATE location_contacts SET priority = ? WHERE location_id = ? AND contact_id = ?',
+      [priority, locationId, contactId]
     );
     await fetchLocations(false);
   }, [db, fetchLocations]);
@@ -108,10 +117,11 @@ export function useLocations() {
 
   const getLocationContacts = useCallback(async (locationId: number) => {
     if (!db) return [];
-    return db.getAllAsync(
-      `SELECT c.* FROM contacts c 
+    return db.getAllAsync<any>(
+      `SELECT c.*, COALESCE(lc.priority, 1) as priority FROM contacts c 
        INNER JOIN location_contacts lc ON c.id = lc.contact_id 
-       WHERE lc.location_id = ?`,
+       WHERE lc.location_id = ? 
+       ORDER BY lc.priority ASC, c.id ASC`,
       [locationId]
     );
   }, [db]);
@@ -130,6 +140,7 @@ export function useLocations() {
     updateLocation,
     deleteLocation,
     assignContact,
+    updateContactPriority,
     removeContactFromLocation,
     getLocationContacts,
   };

@@ -71,13 +71,14 @@ export function useGlobalGeofence() {
         return;
       }
 
-      // 3. Build GeofenceRegion list with assigned contacts
+      // 3. Build GeofenceRegion list with assigned contacts sorted by priority
       const regions: GeofenceRegion[] = await Promise.all(
         locations.map(async (loc) => {
-          const assigned = await db.getAllAsync<Contact>(
-            `SELECT c.* FROM contacts c 
+          const assigned = await db.getAllAsync<Contact & { priority?: number }>(
+            `SELECT c.*, COALESCE(lc.priority, 1) as priority FROM contacts c 
              INNER JOIN location_contacts lc ON c.id = lc.contact_id 
-             WHERE lc.location_id = ? AND c.user_id = ?`,
+             WHERE lc.location_id = ? AND c.user_id = ?
+             ORDER BY lc.priority ASC, c.id ASC`,
             [loc.id, user.uid]
           );
 
@@ -94,10 +95,11 @@ export function useGlobalGeofence() {
             activeDays: loc.active_days || 'mon,tue,wed,thu,fri,sat,sun',
             resetTime: loc.reset_time || '12:00 AM',
             contacts: (targetContacts || []).map((c) => ({
-              phone: c.phone,
+              phone: c.is_group && c.group_id ? c.group_id : c.phone,
               isGroup: c.is_group === 1,
               name: c.name,
               contactId: c.id,
+              priority: (c as any).priority || 1,
             })),
           };
         })
@@ -145,15 +147,16 @@ export function useGlobalGeofence() {
       );
       if (!loc) return { success: false, recipientCount: 0, message: 'Location not found' };
 
-      const assigned = await db.getAllAsync<Contact>(
-        `SELECT c.* FROM contacts c 
+      const assigned = await db.getAllAsync<Contact & { priority?: number }>(
+        `SELECT c.*, COALESCE(lc.priority, 1) as priority FROM contacts c 
          INNER JOIN location_contacts lc ON c.id = lc.contact_id 
-         WHERE lc.location_id = ? AND c.user_id = ?`,
+         WHERE lc.location_id = ? AND c.user_id = ?
+         ORDER BY lc.priority ASC, c.id ASC`,
         [loc.id, user.uid]
       );
 
       const allContacts = await db.getAllAsync<Contact>(
-        'SELECT * FROM contacts WHERE user_id = ?',
+        'SELECT * FROM contacts WHERE user_id = ? ORDER BY name ASC',
         [user.uid]
       );
 
@@ -170,10 +173,11 @@ export function useGlobalGeofence() {
         activeDays: loc.active_days || 'mon,tue,wed,thu,fri,sat,sun',
         resetTime: loc.reset_time || '12:00 AM',
         contacts: (targetContacts || []).map((c) => ({
-          phone: c.phone,
+          phone: c.is_group && c.group_id ? c.group_id : c.phone,
           isGroup: c.is_group === 1,
           name: c.name,
           contactId: c.id,
+          priority: (c as any).priority || 1,
         })),
       };
 

@@ -101,7 +101,17 @@ const PRESET_TEMPLATES = [
 ];
 
 export default function LocationsScreen() {
-  const { locations, fetchLocations, addLocation, updateLocation, deleteLocation, assignContact, removeContactFromLocation, getLocationContacts } = useLocations();
+  const {
+    locations,
+    fetchLocations,
+    addLocation,
+    updateLocation,
+    deleteLocation,
+    assignContact,
+    updateContactPriority,
+    removeContactFromLocation,
+    getLocationContacts,
+  } = useLocations();
   const { contacts, fetchContacts } = useContacts();
   const { db } = useDatabase();
   const { user } = useAuth();
@@ -112,6 +122,8 @@ export default function LocationsScreen() {
   const [showMapPicker, setShowMapPicker] = useState(false);
   const [activeLocation, setActiveLocation] = useState<PinnedLocation | null>(null);
   const [assignedContactsMap, setAssignedContactsMap] = useState<Record<number, boolean>>({});
+  const [assignedPrioritiesMap, setAssignedPrioritiesMap] = useState<Record<number, number>>({});
+  const [locationContactsMap, setLocationContactsMap] = useState<Record<number, Array<Contact & { priority: number }>>>({});
   const [dailyTriggerMap, setDailyTriggerMap] = useState<Record<number, string>>({});
 
   const [editingLocId, setEditingLocId] = useState<number | null>(null);
@@ -128,6 +140,20 @@ export default function LocationsScreen() {
   const [gettingLocation, setGettingLocation] = useState(false);
   const [sendingAlertId, setSendingAlertId] = useState<number | null>(null);
 
+  const refreshLocationContactsMap = useCallback(async (locList: PinnedLocation[]) => {
+    if (!locList || locList.length === 0) return;
+    const map: Record<number, Array<Contact & { priority: number }>> = {};
+    for (const loc of locList) {
+      try {
+        const assigned = (await getLocationContacts(loc.id)) as Array<Contact & { priority: number }>;
+        if (assigned && assigned.length > 0) {
+          map[loc.id] = [...assigned].sort((a, b) => (a.priority || 1) - (b.priority || 1));
+        }
+      } catch (e) {}
+    }
+    setLocationContactsMap(map);
+  }, [getLocationContacts]);
+
   // Re-fetch automatically on tab focus
   useFocusEffect(
     useCallback(() => {
@@ -141,12 +167,18 @@ export default function LocationsScreen() {
     async function syncAndStartGeofences() {
       if (!locations || locations.length === 0) return;
 
+      refreshLocationContactsMap(locations);
+
       const regions: GeofenceRegion[] = await Promise.all(
         locations.map(async (loc) => {
-          let assigned = (await getLocationContacts(loc.id)) as Contact[];
+          let assigned = (await getLocationContacts(loc.id)) as Array<Contact & { priority?: number }>;
           if (!assigned || assigned.length === 0) {
             assigned = contacts;
           }
+
+          const sortedAssigned = [...assigned].sort(
+            (a, b) => (a.priority || 1) - (b.priority || 1)
+          );
 
           return {
             id: loc.id,
@@ -158,11 +190,12 @@ export default function LocationsScreen() {
             messageTemplate: loc.message_template,
             activeDays: loc.active_days || 'mon,tue,wed,thu,fri,sat,sun',
             resetTime: loc.reset_time || '12:00 AM',
-            contacts: (assigned || []).map((c) => ({
-              phone: c.phone,
+            contacts: sortedAssigned.map((c) => ({
+              phone: c.is_group && c.group_id ? c.group_id : c.phone,
               isGroup: c.is_group === 1,
               name: c.name,
               contactId: c.id,
+              priority: c.priority || 1,
             })),
           };
         })
@@ -172,7 +205,7 @@ export default function LocationsScreen() {
     }
 
     syncAndStartGeofences();
-  }, [locations, contacts]);
+  }, [locations, contacts, refreshLocationContactsMap, getLocationContacts]);
 
   const getCurrentLocation = async () => {
     setGettingLocation(true);
@@ -221,18 +254,8 @@ export default function LocationsScreen() {
     setShowAddModal(true);
   };
 
-  const openMapStudio = async () => {
+  const openMapStudio = () => {
     setShowAddModal(false);
-    if (!latitude || !longitude) {
-      try {
-        const { status } = await Location.getForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-          setLatitude(loc.coords.latitude.toFixed(6));
-          setLongitude(loc.coords.longitude.toFixed(6));
-        }
-      } catch (e) {}
-    }
     setShowMapPicker(true);
   };
 
@@ -260,12 +283,15 @@ export default function LocationsScreen() {
 
   const openAssignModal = async (loc: PinnedLocation) => {
     setActiveLocation(loc);
-    const assigned = await getLocationContacts(loc.id);
-    const map: Record<number, boolean> = {};
-    (assigned as any[]).forEach((c) => {
-      map[c.id] = true;
+    const assigned = (await getLocationContacts(loc.id)) as Array<Contact & { priority?: number }>;
+    const assignMap: Record<number, boolean> = {};
+    const prioMap: Record<number, number> = {};
+    (assigned || []).forEach((c, idx) => {
+      assignMap[c.id] = true;
+      prioMap[c.id] = c.priority !== undefined ? c.priority : idx + 1;
     });
-    setAssignedContactsMap(map);
+    setAssignedContactsMap(assignMap);
+    setAssignedPrioritiesMap(prioMap);
     setShowAssignModal(true);
   };
 
@@ -277,10 +303,26 @@ export default function LocationsScreen() {
       setAssignedContactsMap((prev) => ({ ...prev, [contactId]: false }));
       showMessage('Contact Unassigned', 'Removed recipient from alert', 'info');
     } else {
-      await assignContact(activeLocation.id, contactId);
+      const assignedCount = Object.values(assignedContactsMap).filter(Boolean).length;
+      const nextPriority = assignedCount + 1;
+      await assignContact(activeLocation.id, contactId, nextPriority);
       setAssignedContactsMap((prev) => ({ ...prev, [contactId]: true }));
-      showMessage('Contact Assigned', 'Will receive alert upon gate arrival', 'whatsapp');
+      setAssignedPrioritiesMap((prev) => ({ ...prev, [contactId]: nextPriority }));
+      showMessage('Contact Assigned', `Assigned as Priority #${nextPriority} (1.5s Gap)`, 'whatsapp');
     }
+    await fetchLocations(false);
+    const updated = (await getLocationContacts(activeLocation.id)) as Array<Contact & { priority: number }>;
+    setLocationContactsMap((prev) => ({ ...prev, [activeLocation.id]: updated }));
+  };
+
+  const handleSetPriority = async (contactId: number, priority: number) => {
+    if (!activeLocation) return;
+    await updateContactPriority(activeLocation.id, contactId, priority);
+    setAssignedPrioritiesMap((prev) => ({ ...prev, [contactId]: priority }));
+    showMessage('Priority Updated', `Set to Priority #${priority} for ${activeLocation.name}`, 'whatsapp');
+    await fetchLocations(false);
+    const updated = (await getLocationContacts(activeLocation.id)) as Array<Contact & { priority: number }>;
+    setLocationContactsMap((prev) => ({ ...prev, [activeLocation.id]: updated }));
   };
 
   const toggleDaySelection = (dayKey: string) => {
@@ -413,7 +455,7 @@ export default function LocationsScreen() {
   const handleSendAlertNow = async (loc: PinnedLocation) => {
     setSendingAlertId(loc.id);
     try {
-      let targetContacts = (await getLocationContacts(loc.id)) as Contact[];
+      let targetContacts = (await getLocationContacts(loc.id)) as Array<Contact & { priority?: number }>;
       if (!targetContacts || targetContacts.length === 0) {
         targetContacts = contacts;
       }
@@ -428,10 +470,10 @@ export default function LocationsScreen() {
         return;
       }
 
-      const recipients = targetContacts.map((c) => ({
-        phone: c.is_group && c.group_id ? c.group_id : c.phone,
-        isGroup: c.is_group === 1,
-      }));
+      // Sort strictly by priority (1st -> 2nd -> 3rd)
+      const sortedContacts = [...targetContacts].sort(
+        (a, b) => (a.priority || 1) - (b.priority || 1)
+      );
 
       const timeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
       const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
@@ -440,35 +482,75 @@ export default function LocationsScreen() {
         .replace(/{time}/g, timeStr)
         .replace(/{date}/g, dateStr);
 
-      const result = await whatsappApi.sendMessage(recipients, loc.name, undefined, messageText);
+      let successfulCount = 0;
 
-      if (result && result.results) {
-        const successful = result.results.filter((r) => r.success).length;
+      // Sequential send with 1.5s gap between recipients to prevent WhatsApp rate-limit blocks
+      for (let i = 0; i < sortedContacts.length; i++) {
+        const c = sortedContacts[i];
+        const prio = c.priority || i + 1;
+        const phoneOrGroup = c.is_group && c.group_id ? c.group_id : c.phone;
 
-        if (db && user) {
-          for (const c of targetContacts) {
+        if (i > 0) {
+          // Safe 1.5s delay between recipients
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+
+        try {
+          const result = await whatsappApi.sendMessage(
+            [{ phone: phoneOrGroup, isGroup: c.is_group === 1 }],
+            loc.name,
+            undefined,
+            messageText
+          );
+
+          const isSuccess = result?.results?.[0]?.success ?? false;
+          if (isSuccess) successfulCount++;
+
+          if (db && user) {
             await db.runAsync(
-              'INSERT INTO message_logs (user_id, location_id, contact_id, location_name, recipient_name, recipient_phone, message_content, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-              [user.uid, loc.id, c.id, loc.name, c.name, c.phone, messageText, 'sent']
+              'INSERT INTO message_logs (user_id, location_id, contact_id, location_name, recipient_name, recipient_phone, message_content, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              [
+                user.uid,
+                loc.id,
+                c.id,
+                loc.name,
+                `[P${prio}] ${c.name}`,
+                c.phone,
+                messageText,
+                isSuccess ? 'sent' : 'failed',
+                isSuccess ? null : (result?.results?.[0]?.error || 'Delivery failed'),
+              ]
+            );
+          }
+        } catch (err: any) {
+          if (db && user) {
+            await db.runAsync(
+              'INSERT INTO message_logs (user_id, location_id, contact_id, location_name, recipient_name, recipient_phone, message_content, status, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              [
+                user.uid,
+                loc.id,
+                c.id,
+                loc.name,
+                `[P${prio}] ${c.name}`,
+                c.phone,
+                messageText,
+                'failed',
+                err?.message || 'Error dispatching message',
+              ]
             );
           }
         }
-
-        await recordLocationTriggeredToday(loc.id, loc.reset_time);
-        const updated = await loadDailyTriggers();
-        setDailyTriggerMap({ ...updated });
-
-        showMessage(
-          'WhatsApp Alert Sent!',
-          `Delivered to ${successful} recipient(s): "${messageText}"`,
-          'whatsapp'
-        );
-      } else {
-        await recordLocationTriggeredToday(loc.id, loc.reset_time);
-        const updated = await loadDailyTriggers();
-        setDailyTriggerMap({ ...updated });
-        showMessage('Alert Dispatched', 'Message queued to WhatsApp service', 'info');
       }
+
+      await recordLocationTriggeredToday(loc.id, loc.reset_time);
+      const updated = await loadDailyTriggers();
+      setDailyTriggerMap({ ...updated });
+
+      showMessage(
+        'WhatsApp Dispatched!',
+        `Delivered in priority order to ${successfulCount}/${sortedContacts.length} recipient(s) with 1.5s anti-ban gap.`,
+        'whatsapp'
+      );
     } catch (error: any) {
       showMessage('Send Failed', error?.message || 'Check WhatsApp connection in Settings', 'error');
     } finally {
@@ -624,7 +706,7 @@ export default function LocationsScreen() {
           <TouchableOpacity style={styles.contactBadge} onPress={() => openAssignModal(item)}>
             <MaterialCommunityIcons name="account-group-outline" size={16} color={Colors.secondary} />
             <Text style={styles.contactCount}>
-              {item.contact_count || 0} assigned • <Text style={{ color: Colors.secondary, fontWeight: '700' }}>Manage</Text>
+              {item.contact_count || 0} assigned • <Text style={{ color: Colors.secondary, fontWeight: '700' }}>Manage Priority</Text>
             </Text>
           </TouchableOpacity>
 
@@ -637,6 +719,28 @@ export default function LocationsScreen() {
             />
           </View>
         </View>
+
+        {/* Priority Dispatch Members Preview */}
+        {locationContactsMap[item.id] && locationContactsMap[item.id].length > 0 && (
+          <View style={styles.priorityPreviewBox}>
+            <View style={styles.priorityPreviewHeader}>
+              <MaterialCommunityIcons name="sort-numeric-ascending" size={13} color={Colors.secondary} />
+              <Text style={styles.priorityPreviewTitle}>Priority Order (1.5s Anti-Ban Gap):</Text>
+            </View>
+            <View style={styles.priorityChipsRow}>
+              {locationContactsMap[item.id].map((c, idx) => {
+                const prio = c.priority || idx + 1;
+                const medal = prio === 1 ? '🥇' : prio === 2 ? '🥈' : prio === 3 ? '🥉' : `#${prio}`;
+                return (
+                  <View key={c.id} style={styles.priorityChipBadge}>
+                    <Text style={styles.priorityChipMedal}>{medal}</Text>
+                    <Text style={styles.priorityChipName} numberOfLines={1}>{c.name}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         <View style={styles.templateBox}>
           <Text style={styles.templateHeader}>Custom WhatsApp Message:</Text>
@@ -1050,38 +1154,113 @@ export default function LocationsScreen() {
           </View>
         </Modal>
 
-        {/* Assign Contacts Modal */}
-        <Modal visible={showAssignModal} onDismiss={() => setShowAssignModal(false)} contentContainerStyle={styles.modal}>
-          <Text style={styles.modalTitle}>Assign Contacts to "{activeLocation?.name}"</Text>
-          <Text style={styles.modalSubtitle}>Select which contacts will receive the message upon gate entry:</Text>
+        {/* Assign Contacts & Priority Modal */}
+        <Modal visible={showAssignModal} onDismiss={() => setShowAssignModal(false)} contentContainerStyle={styles.priorityModal}>
+          <View style={styles.priorityModalHeader}>
+            <View style={styles.priorityModalIcon}>
+              <MaterialCommunityIcons name="account-multiple-check" size={22} color={Colors.secondary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>Assign Members & Priority</Text>
+              <Text style={styles.modalSubtitle}>Location: "{activeLocation?.name}"</Text>
+            </View>
+          </View>
 
-          <ScrollView style={{ maxHeight: 240, marginVertical: Spacing.md }}>
+          <View style={styles.priorityExplainerBox}>
+            <MaterialCommunityIcons name="shield-check" size={16} color={Colors.secondary} style={{ marginTop: 2 }} />
+            <Text style={styles.priorityExplainerText}>
+              Messages are sent sequentially in <Text style={{ fontWeight: '700', color: Colors.text }}>Priority Order (1st, 2nd, 3rd...)</Text> with a <Text style={{ fontWeight: '700', color: Colors.secondary }}>safe 1.5s pause</Text> between members to prevent WhatsApp rate-limit blocks.
+            </Text>
+          </View>
+
+          <ScrollView style={{ maxHeight: 320, marginVertical: Spacing.sm }} showsVerticalScrollIndicator={false}>
             {contacts.length === 0 ? (
               <Text style={{ color: Colors.textMuted, textAlign: 'center', padding: Spacing.md }}>
-                No saved contacts found. Add contacts in the Contacts tab.
+                No saved contacts found. Add contacts in the Contacts tab first.
               </Text>
             ) : (
-              contacts.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={styles.contactCheckRow}
-                  onPress={() => toggleContactAssignment(c.id)}
-                >
-                  <Checkbox
-                    status={assignedContactsMap[c.id] ? 'checked' : 'unchecked'}
-                    color={Colors.secondary}
-                  />
-                  <View style={{ flex: 1, marginLeft: 8 }}>
-                    <Text style={styles.contactRowName}>{c.name}</Text>
-                    <Text style={styles.contactRowPhone}>+{c.phone}</Text>
+              contacts.map((c) => {
+                const isAssigned = !!assignedContactsMap[c.id];
+                const prio = assignedPrioritiesMap[c.id] || 1;
+                const medal = prio === 1 ? '🥇 1st' : prio === 2 ? '🥈 2nd' : prio === 3 ? '🥉 3rd' : `#${prio}`;
+
+                return (
+                  <View key={c.id} style={[styles.priorityContactCard, isAssigned && styles.priorityContactCardAssigned]}>
+                    <TouchableOpacity
+                      style={styles.priorityContactMainRow}
+                      onPress={() => toggleContactAssignment(c.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Checkbox
+                        status={isAssigned ? 'checked' : 'unchecked'}
+                        color={Colors.secondary}
+                      />
+                      <View style={{ flex: 1, marginLeft: 6 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.contactRowName}>{c.name}</Text>
+                          {c.is_group === 1 && (
+                            <View style={styles.groupBadge}>
+                              <Text style={styles.groupBadgeText}>Group</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.contactRowPhone}>
+                          {c.is_group ? (c.group_id ? `JID: ${c.group_id}` : 'WhatsApp Group') : `+${c.phone}`}
+                        </Text>
+                      </View>
+
+                      {isAssigned && (
+                        <View style={styles.activePriorityBadge}>
+                          <Text style={styles.activePriorityBadgeText}>{medal} Priority</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    {/* Priority Selector when Assigned */}
+                    {isAssigned && (
+                      <View style={styles.priorityLevelSelectorRow}>
+                        <Text style={styles.prioritySelectLabel}>Set Priority:</Text>
+                        <View style={styles.priorityChipsGroup}>
+                          {[1, 2, 3, 4, 5].map((lvl) => {
+                            const isSelected = prio === lvl;
+                            return (
+                              <TouchableOpacity
+                                key={lvl}
+                                style={[
+                                  styles.priorityLevelChip,
+                                  isSelected && styles.priorityLevelChipSelected,
+                                ]}
+                                onPress={() => handleSetPriority(c.id, lvl)}
+                                activeOpacity={0.7}
+                              >
+                                <Text
+                                  style={[
+                                    styles.priorityLevelChipText,
+                                    isSelected && styles.priorityLevelChipTextSelected,
+                                  ]}
+                                >
+                                  {lvl === 1 ? '1st' : lvl === 2 ? '2nd' : lvl === 3 ? '3rd' : `#${lvl}`}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    )}
                   </View>
-                </TouchableOpacity>
-              ))
+                );
+              })
             )}
           </ScrollView>
 
-          <Button mode="contained" onPress={() => setShowAssignModal(false)} buttonColor={Colors.secondary} style={{ borderRadius: BorderRadius.md }}>
-            Done
+          <Button
+            mode="contained"
+            onPress={() => setShowAssignModal(false)}
+            buttonColor={Colors.secondary}
+            style={{ borderRadius: BorderRadius.md, marginTop: Spacing.xs }}
+            labelStyle={{ fontWeight: '700' }}
+          >
+            Done & Save Priorities
           </Button>
         </Modal>
       </Portal>
@@ -1428,6 +1607,170 @@ const styles = StyleSheet.create({
     width: '92%',
     borderRadius: BorderRadius.xl,
     padding: Spacing.lg,
+  },
+  priorityModal: {
+    backgroundColor: Colors.surface,
+    margin: Spacing.md,
+    maxWidth: 540,
+    maxHeight: '90%',
+    alignSelf: 'center',
+    width: '94%',
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+  },
+  priorityModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  priorityModalIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: Colors.secondaryBg,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  priorityExplainerBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: Colors.secondaryBg,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
+    borderWidth: 1,
+    borderColor: Colors.secondary + '25',
+  },
+  priorityExplainerText: {
+    flex: 1,
+    fontSize: 11,
+    color: Colors.textSecondary,
+    lineHeight: 16,
+  },
+  priorityContactCard: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    marginBottom: Spacing.xs,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  priorityContactCardAssigned: {
+    borderColor: Colors.secondary + '60',
+    backgroundColor: Colors.secondaryBg + '40',
+  },
+  priorityContactMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  groupBadge: {
+    backgroundColor: Colors.primaryBg,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  groupBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  activePriorityBadge: {
+    backgroundColor: Colors.secondary,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+  },
+  activePriorityBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  priorityLevelSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+    paddingLeft: 34,
+  },
+  prioritySelectLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  priorityChipsGroup: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  priorityLevelChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  priorityLevelChipSelected: {
+    borderColor: Colors.secondary,
+    backgroundColor: Colors.secondary,
+  },
+  priorityLevelChipText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  priorityLevelChipTextSelected: {
+    color: '#FFFFFF',
+  },
+  priorityPreviewBox: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.xs + 2,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  priorityPreviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 4,
+  },
+  priorityPreviewTitle: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: Colors.secondary,
+  },
+  priorityChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+  },
+  priorityChipBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  priorityChipMedal: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  priorityChipName: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: Colors.text,
+    maxWidth: 90,
   },
   contactCheckRow: {
     flexDirection: 'row',

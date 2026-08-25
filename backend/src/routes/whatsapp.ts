@@ -146,16 +146,26 @@ router.post('/send', async (req: Request, res: Response) => {
         // Safe 1.5s delay between multiple recipients to prevent WhatsApp rate-limit / spam block
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
-      const result = await baileysService.sendMessage(
-        recipient.phone,
-        messageContent,
-        recipient.isGroup
-      );
-      results.push({
-        phone: recipient.phone,
-        isGroup: recipient.isGroup,
-        ...result,
-      });
+      try {
+        const result = await baileysService.sendMessage(
+          recipient.phone,
+          messageContent,
+          recipient.isGroup
+        );
+        results.push({
+          phone: recipient.phone,
+          isGroup: recipient.isGroup,
+          ...result,
+        });
+      } catch (err: any) {
+        logger.error({ error: err, recipient: recipient.phone }, 'Error in recipient dispatch loop');
+        results.push({
+          phone: recipient.phone,
+          isGroup: recipient.isGroup,
+          success: false,
+          error: err?.message || 'Failed to dispatch message',
+        });
+      }
     }
 
     const allSuccessful = results.every((r) => r.success);

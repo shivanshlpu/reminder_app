@@ -67,46 +67,62 @@ export function MapPickerModal({
   };
 
   /**
-   * Acquire high-precision live GPS location
+   * Acquire high-precision live GPS location with instant last-known position & safe timeout
    */
   const handleUseCurrentLocation = async () => {
     setIsLocating(true);
     try {
-      // 1. Try Expo Location
+      // 1. Fast instant check: use last known cached location (<50ms)
+      try {
+        const lastPos = await Location.getLastKnownPositionAsync();
+        if (lastPos && lastPos.coords) {
+          const lat = parseFloat(lastPos.coords.latitude.toFixed(6));
+          const lng = parseFloat(lastPos.coords.longitude.toFixed(6));
+          updateMapCenter(lat, lng);
+          setGpsAcquired(true);
+        }
+      } catch (e) {}
+
+      // 2. Request permission and get fresh location with 3.5s timeout
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
-        const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
+        const posPromise = Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
         });
-        const lat = parseFloat(pos.coords.latitude.toFixed(6));
-        const lng = parseFloat(pos.coords.longitude.toFixed(6));
-        updateMapCenter(lat, lng);
-        setGpsAcquired(true);
-        setIsLocating(false);
-        return;
-      }
-    } catch (e) {
-      console.warn('Expo location getCurrentPosition notice:', e);
-    }
-
-    // 2. Fallback to browser geolocation on Web
-    if (typeof navigator !== 'undefined' && navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500));
+        const pos: any = await Promise.race([posPromise, timeoutPromise]);
+        if (pos && pos.coords) {
           const lat = parseFloat(pos.coords.latitude.toFixed(6));
           const lng = parseFloat(pos.coords.longitude.toFixed(6));
           updateMapCenter(lat, lng);
           setGpsAcquired(true);
+        }
+      }
+    } catch (e) {
+      console.warn('Location acquisition notice:', e);
+    } finally {
+      // 3. Browser fallback on Web if still searching
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.geolocation) {
+        try {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              const lat = parseFloat(pos.coords.latitude.toFixed(6));
+              const lng = parseFloat(pos.coords.longitude.toFixed(6));
+              updateMapCenter(lat, lng);
+              setGpsAcquired(true);
+              setIsLocating(false);
+            },
+            () => {
+              setIsLocating(false);
+            },
+            { enableHighAccuracy: true, timeout: 3500 }
+          );
+        } catch (e) {
           setIsLocating(false);
-        },
-        (err) => {
-          console.warn('Browser geolocation notice:', err);
-          setIsLocating(false);
-        },
-        { enableHighAccuracy: true, timeout: 8000 }
-      );
-    } else {
-      setIsLocating(false);
+        }
+      } else {
+        setIsLocating(false);
+      }
     }
   };
 
@@ -127,7 +143,7 @@ export function MapPickerModal({
         setSelectedLng(initialLng);
         setGpsAcquired(true);
       } else {
-        // Automatically fetch live GPS location
+        // Automatically fetch live GPS location without blocking UI
         handleUseCurrentLocation();
       }
     }
@@ -137,12 +153,19 @@ export function MapPickerModal({
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     try {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeoutId = controller ? setTimeout(() => controller.abort(), 4000) : null;
+
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
           searchQuery.trim()
         )}&limit=1`,
-        { headers: { 'User-Agent': 'ExpenseTrackerReminderApp/1.0' } }
+        {
+          headers: { 'User-Agent': 'PocketRadarApp/1.0' },
+          signal: controller ? controller.signal : undefined,
+        }
       );
+      if (timeoutId) clearTimeout(timeoutId);
       const data = await res.json();
       if (data && data.length > 0) {
         const lat = parseFloat(parseFloat(data[0].lat).toFixed(6));
@@ -153,7 +176,7 @@ export function MapPickerModal({
         }
       }
     } catch (e) {
-      console.warn('Map search error:', e);
+      console.warn('Map search notice:', e);
     } finally {
       setIsSearching(false);
     }
@@ -164,7 +187,7 @@ export function MapPickerModal({
     onDismiss();
   };
 
-  // Generate Leaflet Map HTML string
+  // Generate Leaflet Map HTML string with multi-CDN and multi-tile resilient fallbacks
   const leafletMapHtml = useMemo(() => {
     const lat = selectedLat || initialLat || 28.6139;
     const lng = selectedLng || initialLng || 77.209;
@@ -177,6 +200,7 @@ export function MapPickerModal({
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; touch-action: manipulation; }
           html, body { width: 100%; height: 100%; min-height: 100%; overflow: hidden; background: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -200,13 +224,20 @@ export function MapPickerModal({
         <div id="loading"><div class="spinner"></div>Loading interactive map & live GPS...</div>
         <div id="map"></div>
         <script>
+          // Guaranteed spinner dismiss timeout
+          setTimeout(function() {
+            var el = document.getElementById('loading');
+            if (el) el.style.display = 'none';
+          }, 1200);
+
           function initMap() {
             if (typeof L === 'undefined') {
               var script = document.createElement('script');
               script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
               script.onload = runLeaflet;
               script.onerror = function() {
-                document.getElementById('loading').innerHTML = '⚠️ Map could not be loaded. Please check your internet connection.';
+                var el = document.getElementById('loading');
+                if (el) el.style.display = 'none';
               };
               document.head.appendChild(script);
             } else {
@@ -227,7 +258,7 @@ export function MapPickerModal({
                 scrollWheelZoom: true
               }).setView([lat, lng], 17);
 
-              // Fast, resilient tile layer with instant CartoDB & OSM fallbacks
+              // Resilient tile layer with multi-provider fallbacks
               var tileLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 maxZoom: 19,
                 attribution: '© OpenStreetMap'
@@ -303,6 +334,8 @@ export function MapPickerModal({
               } catch(e) {}
             } catch(err) {
               console.error('Leaflet initialization error:', err);
+              var loadingEl = document.getElementById('loading');
+              if (loadingEl) loadingEl.style.display = 'none';
             }
           }
 
