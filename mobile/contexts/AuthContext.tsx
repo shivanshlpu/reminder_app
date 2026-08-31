@@ -25,16 +25,8 @@ interface AuthContextType {
 const STORAGE_USER_KEY = '@expense_tracker_user';
 const STORAGE_USERS_LIST_KEY = '@expense_tracker_registered_users';
 
-// Pre-seeded default users so Shivansh (and testing) works instantly out-of-the-box anywhere
-const DEFAULT_USERS: Record<string, { uid: string; passwordHash: string }> = {
-  'shivanshti10@gmail.com': {
-    uid: 'local_shivanshti10_gmail_com',
-    passwordHash: '12345678',
-  },
-};
-
 const loadStoredUsers = async (): Promise<Record<string, { uid: string; passwordHash: string }>> => {
-  let map: Record<string, { uid: string; passwordHash: string }> = { ...DEFAULT_USERS };
+  let map: Record<string, { uid: string; passwordHash: string }> = {};
   try {
     let raw: string | null = null;
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -46,7 +38,7 @@ const loadStoredUsers = async (): Promise<Record<string, { uid: string; password
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        map = { ...DEFAULT_USERS, ...parsed };
+        map = { ...parsed };
       }
     }
   } catch (e) {
@@ -173,16 +165,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('Incorrect password. Please check your password and try again.');
       }
       const loggedUser: AppUser = { uid: existing.uid, email: cleanEmail };
-      await saveSession(loggedUser);
-      return;
-    }
-
-    // Special direct matching for owner account
-    if (cleanEmail === 'shivanshti10@gmail.com' && cleanPass === '12345678') {
-      const uid = 'local_shivanshti10_gmail_com';
-      usersMap[cleanEmail] = { uid, passwordHash: cleanPass };
-      await saveStoredUsers(usersMap);
-      const loggedUser: AppUser = { uid, email: cleanEmail };
       await saveSession(loggedUser);
       return;
     }

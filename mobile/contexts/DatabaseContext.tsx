@@ -61,15 +61,41 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Ensures user exists and seamlessly backfills any missing categories in a single fast pass.
+ * Ensures user exists, migrates any legacy local entries, and backfills missing categories.
  */
 async function ensureUserAndCategoriesExist(db: IDatabase, userId: string, email: string) {
   try {
+    // 1. Create or ensure user row
     await db.runAsync(
       'INSERT OR IGNORE INTO users (id, email) VALUES (?, ?)',
       [userId, email]
     );
 
+    // 2. Automatically associate any unassigned/legacy local entries with the active user ID
+    try {
+      await db.runAsync(
+        "UPDATE expenses SET user_id = ? WHERE user_id IS NULL OR user_id = '' OR user_id = 'guest' OR user_id = 'local_user'",
+        [userId]
+      );
+      await db.runAsync(
+        "UPDATE loans SET user_id = ? WHERE user_id IS NULL OR user_id = '' OR user_id = 'guest' OR user_id = 'local_user'",
+        [userId]
+      );
+      await db.runAsync(
+        "UPDATE pinned_locations SET user_id = ? WHERE user_id IS NULL OR user_id = '' OR user_id = 'guest' OR user_id = 'local_user'",
+        [userId]
+      );
+      await db.runAsync(
+        "UPDATE contacts SET user_id = ? WHERE user_id IS NULL OR user_id = '' OR user_id = 'guest' OR user_id = 'local_user'",
+        [userId]
+      );
+      await db.runAsync(
+        "UPDATE message_logs SET user_id = ? WHERE user_id IS NULL OR user_id = '' OR user_id = 'guest' OR user_id = 'local_user'",
+        [userId]
+      );
+    } catch (e) {}
+
+    // 3. Ensure default categories exist
     const existingCats = await db.getAllAsync<{ name: string }>(
       'SELECT name FROM categories WHERE user_id = ?',
       [userId]
@@ -89,7 +115,7 @@ async function ensureUserAndCategoriesExist(db: IDatabase, userId: string, email
       );
     }
   } catch (e) {
-    console.error('Failed to seed user or categories', e);
+    console.error('Failed to seed user, migrate data, or seed categories', e);
   }
 }
 

@@ -20,8 +20,8 @@ import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/t
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState('shivanshti10@gmail.com');
-  const [password, setPassword] = useState('12345678');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -49,12 +49,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleQuickFillShivansh = () => {
-    setEmail('shivanshti10@gmail.com');
-    setPassword('12345678');
-    setErrorMessage(null);
-  };
-
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -72,16 +66,6 @@ export default function LoginScreen() {
             <Text style={styles.title}>PocketRadar</Text>
             <Text style={styles.subtitle}>GPS Gate Radar, Smart Khata & Expenses</Text>
           </View>
-
-          {/* Quick Credential Chip */}
-          <TouchableOpacity
-            style={styles.quickChip}
-            onPress={handleQuickFillShivansh}
-            activeOpacity={0.8}
-          >
-            <MaterialCommunityIcons name="account-check-outline" size={18} color={Colors.primary} />
-            <Text style={styles.quickChipText}>Owner ID: <Text style={{ fontWeight: '700' }}>shivanshti10@gmail.com</Text></Text>
-          </TouchableOpacity>
 
           {/* Error Banner */}
           {errorMessage && (
@@ -244,23 +228,6 @@ const styles = StyleSheet.create({
   linkHighlight: {
     color: Colors.primary,
     fontWeight: '700',
-  },
-  quickChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primaryBg,
-    paddingVertical: Spacing.xs + 2,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    marginBottom: Spacing.md,
-    gap: Spacing.xs,
-  },
-  quickChipText: {
-    fontSize: Fonts.sizes.xs,
-    color: Colors.text,
   },
   errorBox: {
     flexDirection: 'row',

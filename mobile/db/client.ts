@@ -62,12 +62,36 @@ class AsyncStorageDatabase implements IDatabase {
   async init(): Promise<void> {
     if (this.isLoaded) return;
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_DB_PREFIX + 'state');
+      let stored = await AsyncStorage.getItem(STORAGE_DB_PREFIX + 'state');
+      if (!stored && typeof window !== 'undefined' && window.localStorage) {
+        stored = window.localStorage.getItem(STORAGE_DB_PREFIX + 'state');
+      }
       if (stored) {
         this.data = JSON.parse(stored);
       }
     } catch (e) {
       console.warn('Initializing fresh local storage DB');
+    }
+
+    // Ensure array fields exist
+    if (!this.data.users) this.data.users = [];
+    if (!this.data.categories) this.data.categories = [];
+    if (!this.data.expenses) this.data.expenses = [];
+    if (!this.data.pinned_locations) this.data.pinned_locations = [];
+    if (!this.data.contacts) this.data.contacts = [];
+    if (!this.data.location_contacts) this.data.location_contacts = [];
+    if (!this.data.message_logs) this.data.message_logs = [];
+    if (!this.data.loans) this.data.loans = [];
+    if (!this.data.autoIncrement) {
+      this.data.autoIncrement = {
+        categories: 1,
+        expenses: 1,
+        pinned_locations: 1,
+        contacts: 1,
+        location_contacts: 1,
+        message_logs: 1,
+        loans: 1,
+      };
     }
 
     // Automatically deduplicate categories
@@ -103,7 +127,11 @@ class AsyncStorageDatabase implements IDatabase {
 
   private async save(): Promise<void> {
     try {
-      await AsyncStorage.setItem(STORAGE_DB_PREFIX + 'state', JSON.stringify(this.data));
+      const json = JSON.stringify(this.data);
+      await AsyncStorage.setItem(STORAGE_DB_PREFIX + 'state', json);
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(STORAGE_DB_PREFIX + 'state', json);
+      }
     } catch (e) {
       console.error('Failed to persist database to storage', e);
     }
@@ -505,6 +533,24 @@ class AsyncStorageDatabase implements IDatabase {
       this.data.loans = this.data.loans.filter((l) => !(l.id === Number(id) && (!user_id || l.user_id === String(user_id))));
       this.scheduleSave();
       return { lastInsertRowId: 0, changes: initialLen - this.data.loans.length };
+    }
+
+    // 17. UPDATE table SET user_id = ? (Data Migration & Legacy Record Association)
+    if (/^UPDATE\s+(expenses|loans|pinned_locations|contacts|message_logs)\s+SET\s+user_id\s*=\s*\?/i.test(cleanSql)) {
+      const match = cleanSql.match(/^UPDATE\s+(expenses|loans|pinned_locations|contacts|message_logs)/i);
+      const tableName = match ? (match[1].toLowerCase() as keyof LocalStorageDBData) : null;
+      const [newUserId] = params;
+      let count = 0;
+      if (tableName && Array.isArray(this.data[tableName])) {
+        (this.data[tableName] as any[]).forEach((item) => {
+          if (!item.user_id || item.user_id === 'guest' || item.user_id === 'local_user' || item.user_id === '') {
+            item.user_id = String(newUserId);
+            count++;
+          }
+        });
+        if (count > 0) this.scheduleSave();
+      }
+      return { lastInsertRowId: 0, changes: count };
     }
 
     return { lastInsertRowId: 0, changes: 0 };
