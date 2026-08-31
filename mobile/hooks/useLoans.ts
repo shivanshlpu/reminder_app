@@ -31,7 +31,7 @@ export interface Loan {
 }
 
 export function useLoans() {
-  const { db, isReady, syncCloud } = useDatabase();
+  const { db, isReady } = useDatabase();
   const { user } = useAuth();
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,10 +43,6 @@ export function useLoans() {
         setLoading(true);
       }
       try {
-        if (loans.length === 0 && syncCloud) {
-          await syncCloud().catch(() => {});
-        }
-
         const result = await db.getAllAsync<Loan>(
           'SELECT * FROM loans WHERE user_id = ? ORDER BY date DESC, created_at DESC',
           [user.uid]
@@ -58,7 +54,7 @@ export function useLoans() {
         setLoading(false);
       }
     },
-    [db, user, loans.length, syncCloud]
+    [db, user, loans.length]
   );
 
   /**

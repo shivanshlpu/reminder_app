@@ -4,6 +4,7 @@
  * Automatically seeds and backfills all default categories (including Grooming & Online Shopping).
  */
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { openDatabase, IDatabase } from '../db/client';
 import { useAuth } from './AuthContext';
 import { DEFAULT_CATEGORIES } from '../constants/categories';
@@ -21,7 +22,7 @@ const DatabaseContext = createContext<DatabaseContextType>({
   syncCloud: async () => undefined,
 });
 
-// Track seeded users in memory to prevent repeated startup delays
+const INITIAL_SYNC_KEY = '@expense_tracker_initial_synced_';
 const seededUsers = new Set<string>();
 
 export function DatabaseProvider({ children }: { children: React.ReactNode }) {
@@ -44,10 +45,23 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         if (user && !seededUsers.has(user.uid)) {
           await ensureUserAndCategoriesExist(database, user.uid, user.email || 'user@example.com');
           seededUsers.add(user.uid);
-          // Restore and synchronize all cloud entries from MongoDB Atlas
-          syncAllCloudData(database, user.uid).catch((err) =>
-            console.warn('Initial cloud sync notice:', err?.message)
-          );
+
+          // Perform cloud sync ONCE per user account only
+          let synced = await AsyncStorage.getItem(INITIAL_SYNC_KEY + user.uid);
+          if (!synced && typeof window !== 'undefined' && window.localStorage) {
+            synced = window.localStorage.getItem(INITIAL_SYNC_KEY + user.uid);
+          }
+
+          if (synced !== 'true') {
+            syncAllCloudData(database, user.uid)
+              .then(async () => {
+                await AsyncStorage.setItem(INITIAL_SYNC_KEY + user.uid, 'true');
+                if (typeof window !== 'undefined' && window.localStorage) {
+                  window.localStorage.setItem(INITIAL_SYNC_KEY + user.uid, 'true');
+                }
+              })
+              .catch(() => {});
+          }
         }
 
         if (isMounted) {
