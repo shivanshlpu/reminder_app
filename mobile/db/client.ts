@@ -109,6 +109,74 @@ class AsyncStorageDatabase implements IDatabase {
       this.scheduleSave();
     }
 
+    // Automatically deduplicate expenses (removes repeated sync duplicates)
+    if (this.data.expenses && this.data.expenses.length > 0) {
+      const seenExp = new Set<string>();
+      const uniqueExp: typeof this.data.expenses = [];
+      for (const exp of this.data.expenses) {
+        const key = `${exp.user_id}_${exp.date}_${Number(exp.amount)}_${(exp.note || '').trim().toLowerCase()}`;
+        if (!seenExp.has(key)) {
+          seenExp.add(key);
+          uniqueExp.push(exp);
+        }
+      }
+      if (uniqueExp.length !== this.data.expenses.length) {
+        this.data.expenses = uniqueExp;
+        this.scheduleSave();
+      }
+    }
+
+    // Automatically deduplicate loans
+    if (this.data.loans && this.data.loans.length > 0) {
+      const seenLoans = new Set<string>();
+      const uniqueLoans: typeof this.data.loans = [];
+      for (const loan of this.data.loans) {
+        const key = `${loan.user_id}_${(loan.person_name || '').trim().toLowerCase()}_${Number(loan.amount)}_${loan.type}_${loan.date}`;
+        if (!seenLoans.has(key)) {
+          seenLoans.add(key);
+          uniqueLoans.push(loan);
+        }
+      }
+      if (uniqueLoans.length !== this.data.loans.length) {
+        this.data.loans = uniqueLoans;
+        this.scheduleSave();
+      }
+    }
+
+    // Automatically deduplicate pinned locations
+    if (this.data.pinned_locations && this.data.pinned_locations.length > 0) {
+      const seenLocs = new Set<string>();
+      const uniqueLocs: typeof this.data.pinned_locations = [];
+      for (const loc of this.data.pinned_locations) {
+        const key = `${loc.user_id}_${(loc.name || '').trim().toLowerCase()}`;
+        if (!seenLocs.has(key)) {
+          seenLocs.add(key);
+          uniqueLocs.push(loc);
+        }
+      }
+      if (uniqueLocs.length !== this.data.pinned_locations.length) {
+        this.data.pinned_locations = uniqueLocs;
+        this.scheduleSave();
+      }
+    }
+
+    // Automatically deduplicate contacts
+    if (this.data.contacts && this.data.contacts.length > 0) {
+      const seenContacts = new Set<string>();
+      const uniqueContacts: typeof this.data.contacts = [];
+      for (const c of this.data.contacts) {
+        const key = `${c.user_id}_${(c.phone || '').trim().replace(/[^0-9]/g, '')}`;
+        if (!seenContacts.has(key)) {
+          seenContacts.add(key);
+          uniqueContacts.push(c);
+        }
+      }
+      if (uniqueContacts.length !== this.data.contacts.length) {
+        this.data.contacts = uniqueContacts;
+        this.scheduleSave();
+      }
+    }
+
     this.isLoaded = true;
   }
 

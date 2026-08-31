@@ -1,6 +1,7 @@
 /**
  * Cloud Data Sync & Hydration Engine
  * Connects to MongoDB backend to pull, restore, and synchronize all user data.
+ * Includes strict concurrency locks and deduplication.
  */
 import { IDatabase } from '../db/client';
 import { whatsappApi } from './whatsapp-api';
@@ -12,13 +13,16 @@ export interface SyncStats {
   contacts: number;
 }
 
+let isSyncing = false;
+
 export async function syncAllCloudData(db: IDatabase, userId: string): Promise<SyncStats> {
   const stats: SyncStats = { expenses: 0, loans: 0, locations: 0, contacts: 0 };
   const baseUrl = whatsappApi.getBaseUrl();
-  if (!baseUrl || !userId) return stats;
+  if (!baseUrl || !userId || isSyncing) return stats;
 
+  isSyncing = true;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutId = controller ? setTimeout(() => controller.abort(), 6000) : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 8000) : null;
 
   try {
     // 1. Sync Expenses
@@ -36,18 +40,32 @@ export async function syncAllCloudData(db: IDatabase, userId: string): Promise<S
         const catMap = new Map<string, number>();
         (localCats || []).forEach((c) => catMap.set(c.name.toLowerCase(), c.id));
 
-        // Fetch existing local expenses to prevent duplicates
-        const existingExpenses = await db.getAllAsync<{ id: number; amount: number; date: string; note: string | null; category_id: number }>(
-          'SELECT id, amount, date, note, category_id FROM expenses WHERE user_id = ?',
+        // Fetch existing local expenses to build a fast lookup set
+        const existingExpenses = await db.getAllAsync<{ id: number; amount: number; date: string; note: string | null }>(
+          'SELECT id, amount, date, note FROM expenses WHERE user_id = ?',
           [userId]
         );
 
+        const seenKeys = new Set<string>();
+        (existingExpenses || []).forEach((e) => {
+          const key = `${e.date}|${Number(e.amount)}|${(e.note || '').trim().toLowerCase()}`;
+          seenKeys.add(key);
+        });
+
         for (const exp of json.data) {
+          const expDate = String(exp.date || '').split('T')[0];
+          const expAmount = Number(exp.amount) || 0;
+          const expNote = exp.note || null;
+          const expKey = `${expDate}|${expAmount}|${(expNote || '').trim().toLowerCase()}`;
+
+          if (seenKeys.has(expKey)) {
+            continue; // Skip existing
+          }
+
           const catName = (exp.categoryName || 'Other').trim();
           let catId = catMap.get(catName.toLowerCase());
 
           if (!catId) {
-            // Create category if missing
             const catIcon = exp.categoryIcon || 'cash';
             const catColor = exp.categoryColor || '#6366F1';
             const catResult = await db.runAsync(
@@ -58,21 +76,12 @@ export async function syncAllCloudData(db: IDatabase, userId: string): Promise<S
             catMap.set(catName.toLowerCase(), catId);
           }
 
-          const expDate = String(exp.date || '').split('T')[0];
-          const expAmount = Number(exp.amount) || 0;
-          const expNote = exp.note || null;
-
-          const exists = (existingExpenses || []).some(
-            (e) => e.amount === expAmount && e.date === expDate && (e.note || null) === expNote
+          await db.runAsync(
+            'INSERT INTO expenses (user_id, category_id, amount, date, note) VALUES (?, ?, ?, ?, ?)',
+            [userId, catId, expAmount, expDate, expNote]
           );
-
-          if (!exists) {
-            await db.runAsync(
-              'INSERT INTO expenses (user_id, category_id, amount, date, note) VALUES (?, ?, ?, ?, ?)',
-              [userId, catId, expAmount, expDate, expNote]
-            );
-            stats.expenses++;
-          }
+          seenKeys.add(expKey);
+          stats.expenses++;
         }
       }
     } catch (e) {
@@ -91,6 +100,11 @@ export async function syncAllCloudData(db: IDatabase, userId: string): Promise<S
           [userId]
         );
 
+        const seenLoanKeys = new Set<string>();
+        (existingLoans || []).forEach((l) => {
+          seenLoanKeys.add(`${(l.person_name || '').trim().toLowerCase()}|${Number(l.amount)}|${l.type}`);
+        });
+
         for (const loan of json.data) {
           const pName = String(loan.personName || '').trim();
           const pPhone = String(loan.personPhone || '').trim();
@@ -102,16 +116,14 @@ export async function syncAllCloudData(db: IDatabase, userId: string): Promise<S
           const lNote = loan.note || null;
           const lStatus = loan.status || 'pending';
           const lAutoNotify = loan.autoNotify ? 1 : 0;
+          const loanKey = `${pName.toLowerCase()}|${lAmount}|${lType}`;
 
-          const exists = (existingLoans || []).some(
-            (l) => l.person_name.toLowerCase() === pName.toLowerCase() && l.amount === lAmount && l.type === lType
-          );
-
-          if (!exists && pName) {
+          if (!seenLoanKeys.has(loanKey) && pName) {
             await db.runAsync(
               'INSERT INTO loans (user_id, person_name, person_phone, type, amount, amount_repaid, date, due_date, note, status, auto_notify) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
               [userId, pName, pPhone, lType, lAmount, lRepaid, lDate, lDueDate, lNote, lStatus, lAutoNotify]
             );
+            seenLoanKeys.add(loanKey);
             stats.loans++;
           }
         }
@@ -132,6 +144,9 @@ export async function syncAllCloudData(db: IDatabase, userId: string): Promise<S
           [userId]
         );
 
+        const seenLocKeys = new Set<string>();
+        (existingLocs || []).forEach((l) => seenLocKeys.add((l.name || '').trim().toLowerCase()));
+
         for (const loc of json.data) {
           const lName = String(loc.name || '').trim();
           const lLat = Number(loc.latitude) || 0;
@@ -142,15 +157,12 @@ export async function syncAllCloudData(db: IDatabase, userId: string): Promise<S
           const lActiveDays = Array.isArray(loc.activeDays) ? loc.activeDays.join(',') : 'mon,tue,wed,thu,fri,sat,sun';
           const lResetTime = loc.resetTime || '12:00 AM';
 
-          const exists = (existingLocs || []).some(
-            (l) => l.name.toLowerCase() === lName.toLowerCase() || (Math.abs(l.latitude - lLat) < 0.0001 && Math.abs(l.longitude - lLng) < 0.0001)
-          );
-
-          if (!exists && lName) {
+          if (!seenLocKeys.has(lName.toLowerCase()) && lName) {
             await db.runAsync(
               'INSERT INTO pinned_locations (user_id, name, latitude, longitude, radius, auto_send, message_template, active_days, reset_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
               [userId, lName, lLat, lLng, lRadius, lAutoSend, lMsg, lActiveDays, lResetTime]
             );
+            seenLocKeys.add(lName.toLowerCase());
             stats.locations++;
           }
         }
@@ -171,21 +183,24 @@ export async function syncAllCloudData(db: IDatabase, userId: string): Promise<S
           [userId]
         );
 
+        const seenContactKeys = new Set<string>();
+        (existingContacts || []).forEach((c) => {
+          seenContactKeys.add((c.phone || '').trim().replace(/[^0-9]/g, ''));
+        });
+
         for (const c of json.data) {
           const cName = String(c.name || '').trim();
           const cPhone = String(c.phone || '').trim();
+          const cPhoneKey = cPhone.replace(/[^0-9]/g, '');
           const cIsGroup = c.isGroup ? 1 : 0;
           const cGroupId = c.groupId || null;
 
-          const exists = (existingContacts || []).some(
-            (contact) => contact.phone === cPhone || contact.name.toLowerCase() === cName.toLowerCase()
-          );
-
-          if (!exists && cName && cPhone) {
+          if (!seenContactKeys.has(cPhoneKey) && cName && cPhone) {
             await db.runAsync(
               'INSERT INTO contacts (user_id, name, phone, is_group, group_id) VALUES (?, ?, ?, ?, ?)',
               [userId, cName, cPhone, cIsGroup, cGroupId]
             );
+            seenContactKeys.add(cPhoneKey);
             stats.contacts++;
           }
         }
@@ -194,6 +209,7 @@ export async function syncAllCloudData(db: IDatabase, userId: string): Promise<S
       console.warn('Failed to sync contacts from cloud:', e);
     }
   } finally {
+    isSyncing = false;
     if (timeoutId) clearTimeout(timeoutId);
   }
 

@@ -51,6 +51,19 @@ router.get('/expenses', async (req: Request, res: Response) => {
 router.post('/expenses', async (req: Request, res: Response) => {
   try {
     const { userId, categoryId, categoryName, categoryIcon, categoryColor, amount, date, note } = req.body;
+    
+    // Prevent duplicate expense creation
+    const existing = await ExpenseModel.findOne({
+      userId: String(userId),
+      amount: Number(amount),
+      date: String(date),
+      note: note || null,
+    });
+    if (existing) {
+      res.json({ success: true, data: existing, message: 'Existing expense matched' });
+      return;
+    }
+
     const expense = new ExpenseModel({
       userId: String(userId),
       categoryId: String(categoryId),
@@ -59,7 +72,7 @@ router.post('/expenses', async (req: Request, res: Response) => {
       categoryColor,
       amount: Number(amount),
       date: String(date),
-      note,
+      note: note || null,
     });
     await expense.save();
     res.json({ success: true, data: expense });
@@ -100,6 +113,17 @@ router.get('/locations', async (req: Request, res: Response) => {
 router.post('/locations', async (req: Request, res: Response) => {
   try {
     const { userId, name, latitude, longitude, radius, autoSend, messageTemplate, assignedContactIds, activeDays, resetTime } = req.body;
+    
+    // Prevent duplicate location creation
+    const existing = await PinnedLocationModel.findOne({
+      userId: String(userId),
+      name: String(name),
+    });
+    if (existing) {
+      res.json({ success: true, data: existing, message: 'Existing location matched' });
+      return;
+    }
+
     const location = new PinnedLocationModel({
       userId: String(userId),
       name: String(name),
@@ -150,6 +174,17 @@ router.get('/contacts', async (req: Request, res: Response) => {
 router.post('/contacts', async (req: Request, res: Response) => {
   try {
     const { userId, name, phone, isGroup, groupId } = req.body;
+    
+    // Prevent duplicate contact creation
+    const existing = await ContactModel.findOne({
+      userId: String(userId),
+      phone: String(phone),
+    });
+    if (existing) {
+      res.json({ success: true, data: existing, message: 'Existing contact matched' });
+      return;
+    }
+
     const contact = new ContactModel({
       userId: String(userId),
       name: String(name),
@@ -200,6 +235,20 @@ router.get('/loans', async (req: Request, res: Response) => {
 router.post('/loans', async (req: Request, res: Response) => {
   try {
     const { userId, personName, personPhone, type, amount, amountRepaid, date, dueDate, note, status, autoNotify } = req.body;
+    
+    // Prevent duplicate loan creation
+    const existing = await LoanModel.findOne({
+      userId: String(userId),
+      personName: String(personName),
+      amount: Number(amount),
+      type: type || 'lent',
+      date: String(date),
+    });
+    if (existing) {
+      res.json({ success: true, data: existing, message: 'Existing loan matched' });
+      return;
+    }
+
     const loan = new LoanModel({
       userId: String(userId),
       personName: String(personName),
