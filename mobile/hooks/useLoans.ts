@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useAuth } from '../contexts/AuthContext';
 import { whatsappApi } from '../services/whatsapp-api';
+import { syncMutationWithCloud } from '../services/cloud-sync';
 import {
   createLoanAcknowledgmentMessage,
   createLoanReminderMessage,
@@ -96,6 +97,22 @@ export function useLoans() {
       );
 
       const loanId = res.lastInsertRowId;
+
+      // Sync in background to MongoDB Atlas
+      syncMutationWithCloud('loans', 'POST', {
+        userId: user.uid,
+        personName: cleanName,
+        personPhone: cleanPhone,
+        type,
+        amount: numAmount,
+        amountRepaid: 0,
+        date,
+        dueDate: safeDueDate,
+        note: safeNote,
+        status: 'pending',
+        autoNotify,
+      });
+
       await fetchLoans(false);
 
       let messageSent = false;
@@ -185,6 +202,21 @@ export function useLoans() {
           user.uid,
         ]
       );
+
+      // Sync in background to MongoDB Atlas
+      syncMutationWithCloud('loans', 'POST', {
+        userId: user.uid,
+        personName: cleanName,
+        personPhone: cleanPhone,
+        type,
+        amount: numAmount,
+        amountRepaid: numRepaid,
+        date,
+        dueDate: safeDueDate,
+        note: safeNote,
+        status: calcStatus,
+      });
+
       await fetchLoans(false);
     },
     [db, user, fetchLoans]
@@ -224,6 +256,21 @@ export function useLoans() {
         `UPDATE loans SET amount_repaid = ?, status = ? WHERE id = ? AND user_id = ?`,
         [newRepaid, newStatus, id, user.uid]
       );
+
+      // Sync in background to MongoDB Atlas
+      syncMutationWithCloud('loans', 'POST', {
+        userId: user.uid,
+        personName: loan.person_name,
+        personPhone: loan.person_phone,
+        type: loan.type,
+        amount: loan.amount,
+        amountRepaid: newRepaid,
+        date: loan.date,
+        dueDate: loan.due_date,
+        note: loan.note,
+        status: newStatus,
+      });
+
       await fetchLoans(false);
 
       // Send WhatsApp payment receipt

@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useAuth } from '../contexts/AuthContext';
+import { syncMutationWithCloud } from '../services/cloud-sync';
 
 export interface Contact {
   id: number;
@@ -11,7 +12,7 @@ export interface Contact {
   name: string;
   phone: string;
   is_group: number;
-  group_id: string | null;
+  group_id?: string;
   created_at: number;
 }
 
@@ -50,6 +51,16 @@ export function useContacts() {
       'INSERT INTO contacts (user_id, name, phone, is_group, group_id) VALUES (?, ?, ?, ?, ?)',
       [user.uid, name, phone, isGroup ? 1 : 0, groupId || null]
     );
+
+    // Sync in background to MongoDB Atlas
+    syncMutationWithCloud('contacts', 'POST', {
+      userId: user.uid,
+      name,
+      phone,
+      isGroup,
+      groupId: groupId || null,
+    });
+
     await fetchContacts(false);
   }, [db, user, fetchContacts]);
 
@@ -65,6 +76,16 @@ export function useContacts() {
       'UPDATE contacts SET name = ?, phone = ?, is_group = ?, group_id = ? WHERE id = ? AND user_id = ?',
       [name, phone, isGroup ? 1 : 0, groupId || null, id, user.uid]
     );
+
+    // Sync in background to MongoDB Atlas
+    syncMutationWithCloud('contacts', 'POST', {
+      userId: user.uid,
+      name,
+      phone,
+      isGroup,
+      groupId: groupId || null,
+    });
+
     await fetchContacts(false);
   }, [db, user, fetchContacts]);
 

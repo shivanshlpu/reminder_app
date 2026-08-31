@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useAuth } from '../contexts/AuthContext';
+import { syncMutationWithCloud } from '../services/cloud-sync';
 
 export interface PinnedLocation {
   id: number;
@@ -14,8 +15,8 @@ export interface PinnedLocation {
   radius: number;
   auto_send: number;
   message_template: string;
-  active_days?: string;
-  reset_time?: string;
+  active_days: string;
+  reset_time: string;
   created_at: number;
   contact_count?: number;
 }
@@ -62,6 +63,20 @@ export function useLocations() {
       'INSERT INTO pinned_locations (user_id, name, latitude, longitude, radius, message_template, active_days, reset_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [user.uid, name, latitude, longitude, radius, messageTemplate, activeDays, resetTime]
     );
+
+    // Sync in background to MongoDB Atlas
+    syncMutationWithCloud('locations', 'POST', {
+      userId: user.uid,
+      name,
+      latitude,
+      longitude,
+      radius,
+      autoSend: true,
+      messageTemplate,
+      activeDays: activeDays.split(','),
+      resetTime,
+    });
+
     await fetchLocations(false);
   }, [db, user, fetchLocations]);
 
@@ -79,6 +94,18 @@ export function useLocations() {
       'UPDATE pinned_locations SET name = ?, radius = ?, auto_send = ?, message_template = ?, active_days = ?, reset_time = ? WHERE id = ? AND user_id = ?',
       [name, radius, autoSend ? 1 : 0, messageTemplate, activeDays, resetTime, id, user.uid]
     );
+
+    // Sync in background to MongoDB Atlas
+    syncMutationWithCloud('locations', 'POST', {
+      userId: user.uid,
+      name,
+      radius,
+      autoSend,
+      messageTemplate,
+      activeDays: activeDays.split(','),
+      resetTime,
+    });
+
     await fetchLocations(false);
   }, [db, user, fetchLocations]);
 

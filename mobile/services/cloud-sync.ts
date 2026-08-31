@@ -215,3 +215,28 @@ export async function syncAllCloudData(db: IDatabase, userId: string): Promise<S
 
   return stats;
 }
+
+/**
+ * Lightweight background mutation dispatcher.
+ * Syncs adds, updates, and deletes to MongoDB Atlas immediately in the background without blocking the UI thread.
+ */
+export function syncMutationWithCloud(endpoint: string, method: 'POST' | 'PUT' | 'DELETE', body?: any) {
+  try {
+    const baseUrl = whatsappApi.getBaseUrl();
+    if (!baseUrl) return;
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 4000) : null;
+
+    fetch(`${baseUrl}/api/data/${endpoint}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller?.signal,
+    })
+      .catch(() => {})
+      .finally(() => {
+        if (timer) clearTimeout(timer);
+      });
+  } catch (e) {}
+}
+

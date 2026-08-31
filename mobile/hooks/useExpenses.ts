@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDatabase } from '../contexts/DatabaseContext';
 import { useAuth } from '../contexts/AuthContext';
+import { syncMutationWithCloud } from '../services/cloud-sync';
 
 export interface Expense {
   id: number;
@@ -14,7 +15,7 @@ export interface Expense {
   category_color?: string;
   amount: number;
   date: string;
-  note: string | null;
+  note?: string;
   created_at: number;
   updated_at: number;
 }
@@ -87,6 +88,16 @@ export function useExpenses() {
       'INSERT INTO expenses (user_id, category_id, amount, date, note) VALUES (?, ?, ?, ?, ?)',
       [user.uid, categoryId, amount, date, note || null]
     );
+
+    // Sync in background to MongoDB Atlas
+    syncMutationWithCloud('expenses', 'POST', {
+      userId: user.uid,
+      categoryId: String(categoryId),
+      amount: Number(amount),
+      date: String(date),
+      note: note || null,
+    });
+
     await fetchExpenses(undefined, false);
   }, [db, user, fetchExpenses]);
 
@@ -103,6 +114,16 @@ export function useExpenses() {
       'UPDATE expenses SET category_id = ?, amount = ?, date = ?, note = ?, updated_at = unixepoch() WHERE id = ? AND user_id = ?',
       [categoryId, amount, date, note || null, id, user.uid]
     );
+
+    // Sync in background to MongoDB Atlas
+    syncMutationWithCloud('expenses', 'POST', {
+      userId: user.uid,
+      categoryId: String(categoryId),
+      amount: Number(amount),
+      date: String(date),
+      note: note || null,
+    });
+
     await fetchExpenses(undefined, false);
   }, [db, user, fetchExpenses]);
 
