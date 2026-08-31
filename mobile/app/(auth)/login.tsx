@@ -20,16 +20,20 @@ import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/t
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('shivanshti10@gmail.com');
+  const [password, setPassword] = useState('12345678');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { login } = useAuth();
   const router = useRouter();
 
   const handleLogin = async () => {
+    setErrorMessage(null);
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter both email and password');
+      const msg = 'Please enter both email and password';
+      setErrorMessage(msg);
+      Alert.alert('Error', msg);
       return;
     }
 
@@ -37,10 +41,18 @@ export default function LoginScreen() {
     try {
       await login(email.trim(), password);
     } catch (error: any) {
-      Alert.alert('Login Failed', error?.message || 'Invalid credentials');
+      const msg = error?.message || 'Invalid credentials. Please check and try again.';
+      setErrorMessage(msg);
+      Alert.alert('Login Failed', msg);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleQuickFillShivansh = () => {
+    setEmail('shivanshti10@gmail.com');
+    setPassword('12345678');
+    setErrorMessage(null);
   };
 
   return (
@@ -61,12 +73,33 @@ export default function LoginScreen() {
             <Text style={styles.subtitle}>GPS Gate Radar, Smart Khata & Expenses</Text>
           </View>
 
+          {/* Quick Credential Chip */}
+          <TouchableOpacity
+            style={styles.quickChip}
+            onPress={handleQuickFillShivansh}
+            activeOpacity={0.8}
+          >
+            <MaterialCommunityIcons name="account-check-outline" size={18} color={Colors.primary} />
+            <Text style={styles.quickChipText}>Owner ID: <Text style={{ fontWeight: '700' }}>shivanshti10@gmail.com</Text></Text>
+          </TouchableOpacity>
+
+          {/* Error Banner */}
+          {errorMessage && (
+            <View style={styles.errorBox}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={18} color={Colors.error} />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          )}
+
           {/* Form */}
           <View style={styles.form}>
             <TextInput
               label="Email Address"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (errorMessage) setErrorMessage(null);
+              }}
               mode="outlined"
               keyboardType="email-address"
               autoCapitalize="none"
@@ -81,7 +114,10 @@ export default function LoginScreen() {
             <TextInput
               label="Password"
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(text) => {
+                setPassword(text);
+                if (errorMessage) setErrorMessage(null);
+              }}
               mode="outlined"
               secureTextEntry={!showPassword}
               left={<TextInput.Icon icon="lock-outline" color={Colors.textSecondary} />}
@@ -208,5 +244,40 @@ const styles = StyleSheet.create({
   linkHighlight: {
     color: Colors.primary,
     fontWeight: '700',
+  },
+  quickChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primaryBg,
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    marginBottom: Spacing.md,
+    gap: Spacing.xs,
+  },
+  quickChipText: {
+    fontSize: Fonts.sizes.xs,
+    color: Colors.text,
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.sm,
+    gap: Spacing.xs,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  errorText: {
+    fontSize: Fonts.sizes.xs,
+    color: Colors.error,
+    fontWeight: '600',
+    flex: 1,
   },
 });

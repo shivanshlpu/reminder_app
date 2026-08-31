@@ -33,6 +33,8 @@ export default function SettingsScreen() {
   const [backendUrl, setBackendUrlInput] = useState(whatsappApi.getBaseUrl());
 
   const [showQrModal, setShowQrModal] = useState(false);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const pollIntervalRef = useRef<any>(null);
@@ -105,17 +107,25 @@ export default function SettingsScreen() {
   };
 
   const handleDisconnectWhatsApp = async () => {
-    Alert.alert('Disconnect WhatsApp', 'This will log out your current WhatsApp session.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Disconnect',
-        style: 'destructive',
-        onPress: async () => {
-          await whatsappApi.disconnect();
-          checkWhatsAppStatus();
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const ok = window.confirm('Disconnect WhatsApp\n\nThis will log out your current WhatsApp session.');
+      if (ok) {
+        await whatsappApi.disconnect();
+        checkWhatsAppStatus();
+      }
+    } else {
+      Alert.alert('Disconnect WhatsApp', 'This will log out your current WhatsApp session.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            await whatsappApi.disconnect();
+            checkWhatsAppStatus();
+          },
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   const handleSaveBackendUrl = () => {
@@ -127,10 +137,20 @@ export default function SettingsScreen() {
   };
 
   const handleSignOut = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: logout },
-    ]);
+    setShowSignOutModal(true);
+  };
+
+  const confirmSignOut = async () => {
+    setSigningOut(true);
+    try {
+      setShowSignOutModal(false);
+      await logout();
+      router.replace('/(auth)/login');
+    } catch (error: any) {
+      console.error('Logout error:', error);
+    } finally {
+      setSigningOut(false);
+    }
   };
 
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -183,6 +203,14 @@ export default function SettingsScreen() {
           </Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
         </View>
+        <TouchableOpacity
+          style={styles.cardSignOutBtn}
+          onPress={handleSignOut}
+          activeOpacity={0.7}
+        >
+          <MaterialCommunityIcons name="logout-variant" size={18} color={Colors.accent} />
+          <Text style={styles.cardSignOutText}>Sign Out</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Grid wrapper for Desktop / Stacked for Mobile */}
@@ -370,6 +398,50 @@ export default function SettingsScreen() {
             </Button>
           </View>
         </Modal>
+
+        {/* Universal Sign Out Confirmation Modal */}
+        <Modal
+          visible={showSignOutModal}
+          onDismiss={() => setShowSignOutModal(false)}
+          contentContainerStyle={styles.signOutModal}
+        >
+          <View style={styles.signOutHeader}>
+            <View style={styles.signOutIconBox}>
+              <MaterialCommunityIcons name="logout-variant" size={32} color={Colors.accent} />
+            </View>
+            <Text style={styles.signOutTitle}>Sign Out</Text>
+            <Text style={styles.signOutSubtitle}>
+              Are you sure you want to sign out from PocketRadar?
+            </Text>
+            {user?.email ? (
+              <View style={styles.signOutUserChip}>
+                <MaterialCommunityIcons name="account" size={16} color={Colors.textSecondary} />
+                <Text style={styles.signOutUserChipText}>{user.email}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.signOutModalActions}>
+            <Button
+              mode="outlined"
+              onPress={() => setShowSignOutModal(false)}
+              style={styles.signOutCancelBtn}
+              textColor={Colors.text}
+            >
+              Cancel
+            </Button>
+            <Button
+              mode="contained"
+              onPress={confirmSignOut}
+              loading={signingOut}
+              disabled={signingOut}
+              style={styles.signOutConfirmBtn}
+              buttonColor={Colors.accent}
+            >
+              Sign Out
+            </Button>
+          </View>
+        </Modal>
       </Portal>
     </ScrollView>
   );
@@ -395,6 +467,22 @@ const styles = StyleSheet.create({
   userInfo: { flex: 1 },
   userName: { fontSize: Fonts.sizes.lg, fontWeight: '700', color: Colors.text },
   userEmail: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, marginTop: 2 },
+  cardSignOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FEE2E2',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  cardSignOutText: {
+    fontSize: Fonts.sizes.xs,
+    fontWeight: '700',
+    color: Colors.accent,
+  },
   section: { marginBottom: Spacing.xl },
   sectionTitle: { fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.text, marginBottom: Spacing.sm },
   waCard: {
@@ -505,4 +593,73 @@ const styles = StyleSheet.create({
   qrLoadingText: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, textAlign: 'center' },
   qrFooter: { alignItems: 'center', width: '100%' },
   qrStatusHint: { fontSize: Fonts.sizes.xs, color: Colors.textMuted },
+
+  signOutModal: {
+    backgroundColor: Colors.surface,
+    margin: Spacing.lg,
+    maxWidth: 420,
+    alignSelf: 'center',
+    width: '90%',
+    borderRadius: BorderRadius.xl,
+    padding: Spacing.xl,
+    alignItems: 'center',
+  },
+  signOutHeader: {
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+    width: '100%',
+  },
+  signOutIconBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  signOutTitle: {
+    fontSize: Fonts.sizes.title,
+    fontWeight: '800',
+    color: Colors.text,
+  },
+  signOutSubtitle: {
+    fontSize: Fonts.sizes.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+    paddingHorizontal: Spacing.sm,
+  },
+  signOutUserChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceElevated,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: BorderRadius.full,
+    marginTop: Spacing.md,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  signOutUserChipText: {
+    fontSize: Fonts.sizes.xs,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  signOutModalActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  signOutCancelBtn: {
+    flex: 1,
+    borderRadius: BorderRadius.md,
+    borderColor: Colors.border,
+  },
+  signOutConfirmBtn: {
+    flex: 1,
+    borderRadius: BorderRadius.md,
+  },
 });

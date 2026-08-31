@@ -25,20 +25,28 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { register } = useAuth();
   const router = useRouter();
 
   const handleRegister = async () => {
+    setErrorMessage(null);
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
+      const msg = 'Please fill in all fields';
+      setErrorMessage(msg);
+      Alert.alert('Error', msg);
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match');
+      const msg = 'Passwords do not match';
+      setErrorMessage(msg);
+      Alert.alert('Error', msg);
       return;
     }
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
+      const msg = 'Password must be at least 6 characters';
+      setErrorMessage(msg);
+      Alert.alert('Error', msg);
       return;
     }
 
@@ -46,7 +54,9 @@ export default function RegisterScreen() {
     try {
       await register(email.trim(), password);
     } catch (error: any) {
-      Alert.alert('Registration Failed', error?.message || 'Failed to create account');
+      const msg = error?.message || 'Failed to create account';
+      setErrorMessage(msg);
+      Alert.alert('Registration Failed', msg);
     } finally {
       setLoading(false);
     }
@@ -69,11 +79,22 @@ export default function RegisterScreen() {
             <Text style={styles.subtitle}>Join PocketRadar for GPS alerts & expense tracking</Text>
           </View>
 
+          {/* Error Banner */}
+          {errorMessage && (
+            <View style={styles.errorBox}>
+              <MaterialCommunityIcons name="alert-circle-outline" size={18} color={Colors.error} />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          )}
+
           <View style={styles.form}>
             <TextInput
               label="Email Address"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (errorMessage) setErrorMessage(null);
+              }}
               mode="outlined"
               keyboardType="email-address"
               autoCapitalize="none"
@@ -229,5 +250,23 @@ const styles = StyleSheet.create({
   linkHighlight: {
     color: Colors.secondary,
     fontWeight: '700',
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    paddingVertical: Spacing.xs + 2,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.sm,
+    gap: Spacing.xs,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  errorText: {
+    fontSize: Fonts.sizes.xs,
+    color: Colors.error,
+    fontWeight: '600',
+    flex: 1,
   },
 });
