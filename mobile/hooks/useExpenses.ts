@@ -27,7 +27,7 @@ export interface ExpenseFilters {
 }
 
 export function useExpenses() {
-  const { db, isReady } = useDatabase();
+  const { db, isReady, syncCloud } = useDatabase();
   const { user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +39,10 @@ export function useExpenses() {
       setLoading(true);
     }
     try {
+      if (expenses.length === 0 && syncCloud) {
+        await syncCloud().catch(() => {});
+      }
+
       let query = `
         SELECT e.*, c.name as category_name, c.icon as category_icon, c.color as category_color
         FROM expenses e

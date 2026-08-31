@@ -31,7 +31,7 @@ interface DashboardStats {
 
 export default function DashboardScreen() {
   const { user } = useAuth();
-  const { db, isReady } = useDatabase();
+  const { db, isReady, syncCloud } = useDatabase();
   const { isWide } = useResponsiveLayout();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
@@ -108,6 +108,9 @@ export default function DashboardScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
+    if (syncCloud) {
+      await syncCloud().catch(() => {});
+    }
     await loadStats();
     setRefreshing(false);
   };

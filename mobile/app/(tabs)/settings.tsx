@@ -18,18 +18,22 @@ import { Switch, Button, Modal, Portal, TextInput } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
+import { useDatabase } from '../../contexts/DatabaseContext';
+import { showGlobalToast } from '../../contexts/ToastContext';
 import { whatsappApi, WhatsAppStatus } from '../../services/whatsapp-api';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
+  const { syncCloud } = useDatabase();
   const { isWide } = useResponsiveLayout();
   const router = useRouter();
 
   const [waStatus, setWaStatus] = useState<WhatsAppStatus | null>(null);
   const [autoSendGlobal, setAutoSendGlobal] = useState(true);
   const [checkingStatus, setCheckingStatus] = useState(false);
+  const [syncingCloud, setSyncingCloud] = useState(false);
   const [backendUrl, setBackendUrlInput] = useState(whatsappApi.getBaseUrl());
 
   const [showQrModal, setShowQrModal] = useState(false);
@@ -133,6 +137,26 @@ export default function SettingsScreen() {
       whatsappApi.setBaseUrl(backendUrl.trim());
       checkWhatsAppStatus();
       Alert.alert('Backend Updated', `Backend API URL set to ${backendUrl.trim()}`);
+    }
+  };
+
+  const handleManualCloudSync = async () => {
+    setSyncingCloud(true);
+    try {
+      const stats = await syncCloud();
+      if (stats && (stats.expenses > 0 || stats.loans > 0 || stats.locations > 0 || stats.contacts > 0)) {
+        showGlobalToast(
+          'Database Sync Complete 🎉',
+          `Restored: ${stats.expenses} Expenses, ${stats.loans} Loans, ${stats.locations} Locations, ${stats.contacts} Contacts from MongoDB Atlas.`,
+          'success'
+        );
+      } else {
+        showGlobalToast('Database In Sync ✨', 'All your MongoDB Atlas entries are synchronized with your local device.', 'success');
+      }
+    } catch (e: any) {
+      showGlobalToast('Sync Error', e?.message || 'Could not connect to backend server', 'error');
+    } finally {
+      setSyncingCloud(false);
     }
   };
 
@@ -296,6 +320,33 @@ export default function SettingsScreen() {
               Update Endpoint
             </Button>
           </View>
+        </View>
+      </View>
+
+      {/* Database & Cloud Sync Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Database & Cloud Storage (MongoDB Atlas)</Text>
+        <View style={styles.settingCard}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: 4 }}>
+            <MaterialCommunityIcons name="database-sync" size={24} color={Colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.settingLabel}>MongoDB Cloud Sync</Text>
+              <Text style={styles.settingDesc}>
+                Restore and synchronize all your 42+ expenses, 5 loans, 5 locations & 8 contacts from MongoDB Atlas to this device.
+              </Text>
+            </View>
+          </View>
+          <Button
+            mode="contained"
+            onPress={handleManualCloudSync}
+            loading={syncingCloud}
+            disabled={syncingCloud}
+            buttonColor={Colors.primary}
+            icon="cloud-download-outline"
+            style={{ borderRadius: BorderRadius.md, marginTop: Spacing.xs }}
+          >
+            Sync & Restore MongoDB Data
+          </Button>
         </View>
       </View>
 

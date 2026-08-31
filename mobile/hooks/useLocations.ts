@@ -21,7 +21,7 @@ export interface PinnedLocation {
 }
 
 export function useLocations() {
-  const { db, isReady } = useDatabase();
+  const { db, isReady, syncCloud } = useDatabase();
   const { user } = useAuth();
   const [locations, setLocations] = useState<PinnedLocation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +32,10 @@ export function useLocations() {
       setLoading(true);
     }
     try {
+      if (locations.length === 0 && syncCloud) {
+        await syncCloud().catch(() => {});
+      }
+
       const result = await db.getAllAsync<PinnedLocation>(
         `SELECT pl.*, 
           (SELECT COUNT(*) FROM location_contacts lc WHERE lc.location_id = pl.id) as contact_count
@@ -46,7 +50,7 @@ export function useLocations() {
     } finally {
       setLoading(false);
     }
-  }, [db, user, locations.length]);
+  }, [db, user, locations.length, syncCloud]);
 
   const addLocation = useCallback(async (
     name: string,

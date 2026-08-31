@@ -16,7 +16,7 @@ export interface Contact {
 }
 
 export function useContacts() {
-  const { db, isReady } = useDatabase();
+  const { db, isReady, syncCloud } = useDatabase();
   const { user } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +27,10 @@ export function useContacts() {
       setLoading(true);
     }
     try {
+      if (contacts.length === 0 && syncCloud) {
+        await syncCloud().catch(() => {});
+      }
+
       const result = await db.getAllAsync<Contact>(
         'SELECT * FROM contacts WHERE user_id = ? ORDER BY name ASC',
         [user.uid]
@@ -37,7 +41,7 @@ export function useContacts() {
     } finally {
       setLoading(false);
     }
-  }, [db, user, contacts.length]);
+  }, [db, user, contacts.length, syncCloud]);
 
   const addContact = useCallback(async (
     name: string,

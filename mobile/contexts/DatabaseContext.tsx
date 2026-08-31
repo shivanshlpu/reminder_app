@@ -3,19 +3,22 @@
  * Provides the universal SQLite / AsyncStorage DB instance to the app.
  * Automatically seeds and backfills all default categories (including Grooming & Online Shopping).
  */
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { openDatabase, IDatabase } from '../db/client';
 import { useAuth } from './AuthContext';
 import { DEFAULT_CATEGORIES } from '../constants/categories';
+import { syncAllCloudData, SyncStats } from '../services/cloud-sync';
 
 interface DatabaseContextType {
   db: IDatabase | null;
   isReady: boolean;
+  syncCloud: () => Promise<SyncStats | undefined>;
 }
 
 const DatabaseContext = createContext<DatabaseContextType>({
   db: null,
   isReady: false,
+  syncCloud: async () => undefined,
 });
 
 // Track seeded users in memory to prevent repeated startup delays
@@ -26,6 +29,12 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const { user } = useAuth();
 
+  const syncCloud = useCallback(async () => {
+    if (!db || !user) return undefined;
+    const stats = await syncAllCloudData(db, user.uid);
+    return stats;
+  }, [db, user]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -35,6 +44,10 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
         if (user && !seededUsers.has(user.uid)) {
           await ensureUserAndCategoriesExist(database, user.uid, user.email || 'user@example.com');
           seededUsers.add(user.uid);
+          // Restore and synchronize all cloud entries from MongoDB Atlas
+          syncAllCloudData(database, user.uid).catch((err) =>
+            console.warn('Initial cloud sync notice:', err?.message)
+          );
         }
 
         if (isMounted) {
@@ -54,7 +67,7 @@ export function DatabaseProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   return (
-    <DatabaseContext.Provider value={{ db, isReady }}>
+    <DatabaseContext.Provider value={{ db, isReady, syncCloud }}>
       {children}
     </DatabaseContext.Provider>
   );
