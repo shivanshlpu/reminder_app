@@ -7,6 +7,7 @@ import makeWASocket, {
   DisconnectReason,
   WASocket,
   ConnectionState,
+  Browsers,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
@@ -17,8 +18,61 @@ import logger from '../utils/logger';
 export interface WhatsAppStatus {
   connected: boolean;
   qrCode: string | null;
+  pairingCode: string | null;
   phoneNumber: string | null;
   lastConnected: string | null;
+}
+
+export interface SanitizedPhoneResult {
+  valid: boolean;
+  phoneNumber: string;
+  error?: string;
+}
+
+/**
+ * Robustly sanitizes and formats any phone number input to eliminate "wrong number type error".
+ * Accepts string, number, or object representations.
+ * Cleans non-digits, strips leading zeros, auto-prefixes Indian country code 91 if 10 digits.
+ */
+export function sanitizePhoneNumber(input: any): SanitizedPhoneResult {
+  if (input === null || input === undefined) {
+    return { valid: false, phoneNumber: '', error: 'Phone number is required.' };
+  }
+
+  // Handle object with phone property if passed accidentally
+  let val = input;
+  if (typeof input === 'object' && input !== null) {
+    val = input.phoneNumber || input.phone || input.number || '';
+  }
+
+  let cleaned = String(val).trim();
+  // Strip non-digit characters
+  cleaned = cleaned.replace(/\D/g, '');
+
+  // Strip leading trunk zeros e.g. 09876543210 -> 9876543210
+  while (cleaned.startsWith('0')) {
+    cleaned = cleaned.slice(1);
+  }
+
+  if (!cleaned) {
+    return { valid: false, phoneNumber: '', error: 'Phone number cannot be empty or invalid characters.' };
+  }
+
+  // 10-digit Indian standard mobile number
+  if (cleaned.length === 10) {
+    cleaned = `91${cleaned}`;
+  }
+
+  // Valid international mobile numbers are between 10 and 15 digits (E.164)
+  if (cleaned.length < 10 || cleaned.length > 15) {
+    return {
+      valid: false,
+      phoneNumber: cleaned,
+      error: `Invalid phone number length (${cleaned.length} digits). Please enter a valid 10-digit mobile number or full number with country code.`,
+    };
+  }
+
+  return { valid: true, phoneNumber: cleaned };
 }
 
 export interface SendMessageResult {
@@ -33,6 +87,7 @@ class BaileysService {
   private status: WhatsAppStatus = {
     connected: false,
     qrCode: null,
+    pairingCode: null,
     phoneNumber: null,
     lastConnected: null,
   };
@@ -108,7 +163,7 @@ class BaileysService {
         auth: state,
         printQRInTerminal: true,
         logger: pino({ level: 'silent' }) as any,
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        browser: Browsers.ubuntu('Chrome'),
         connectTimeoutMs: 60000,
         qrTimeout: 60000,
         defaultQueryTimeoutMs: 60000,
@@ -129,6 +184,7 @@ class BaileysService {
 
           this.status.connected = false;
           this.status.qrCode = null;
+          this.status.pairingCode = null;
           this.notifyStatusListeners();
           this.isInitializing = false;
 
@@ -147,6 +203,7 @@ class BaileysService {
         } else if (connection === 'open') {
           this.status.connected = true;
           this.status.qrCode = null;
+          this.status.pairingCode = null;
           this.status.lastConnected = new Date().toISOString();
           this.reconnectAttempts = 0;
           this.isInitializing = false;
@@ -170,27 +227,85 @@ class BaileysService {
   }
 
   /**
-   * Normalize and sanitize phone number into proper WhatsApp JID.
+   * Request an 8-character WhatsApp pairing code for linking with a phone number.
+   * Completely validates and cleans phone number to avoid "wrong number type error".
    */
-  private normalizeRecipient(recipient: string, isGroup: boolean): string {
-    if (!recipient) return '';
+  async requestPairingCode(rawPhoneNumber: any): Promise<string> {
+    const sanitized = sanitizePhoneNumber(rawPhoneNumber);
+    if (!sanitized.valid) {
+      throw new Error(sanitized.error || 'Invalid phone number format');
+    }
+    const cleanNumber = sanitized.phoneNumber;
+
+    if (this.status.connected) {
+      throw new Error(`Already connected to WhatsApp account: +${this.status.phoneNumber}`);
+    }
+
+    // Initialize socket if needed
+    if (!this.sock) {
+      await this.initialize(false);
+    }
+
+    // Wait for the WebSocket connection to be fully open
+    let attempts = 0;
+    while ((!this.sock || !(this.sock as any).ws?.isOpen) && attempts < 25) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      attempts++;
+    }
+
+    // If still not open, restart socket and wait
+    if (!this.sock || !(this.sock as any).ws?.isOpen) {
+      logger.info('WebSocket not open yet, forcing fresh connection for pairing code...');
+      await this.initialize(true);
+      let retry = 0;
+      while ((!this.sock || !(this.sock as any).ws?.isOpen) && retry < 25) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        retry++;
+      }
+    }
+
+    if (!this.sock) {
+      throw new Error('Could not establish connection to WhatsApp gateway. Please verify your internet connection.');
+    }
+
+    try {
+      logger.info(`Requesting WhatsApp pairing code for +${cleanNumber}...`);
+      const rawCode = await this.sock.requestPairingCode(cleanNumber);
+
+      // Format code as XXXX-XXXX (e.g. ABCD-1234 or 1234-5678)
+      const formattedCode =
+        rawCode && rawCode.length === 8
+          ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`
+          : rawCode;
+
+      this.status.pairingCode = formattedCode;
+      this.notifyStatusListeners();
+      logger.info(`WhatsApp pairing code generated successfully: ${formattedCode}`);
+
+      return formattedCode;
+    } catch (err: any) {
+      logger.error({ error: err, cleanNumber }, 'Error requesting pairing code');
+      throw new Error(err?.message || 'Failed to request pairing code from WhatsApp servers.');
+    }
+  }
+
+  /**
+   * Normalize and sanitize phone number into proper WhatsApp JID.
+   * Handles any input type (string, number) safely and prevents "wrong number type error".
+   */
+  private normalizeRecipient(recipient: any, isGroup: boolean): string {
+    if (!recipient && recipient !== 0) return '';
     const trimmed = String(recipient).trim();
     if (isGroup) {
       return trimmed.includes('@g.us') ? trimmed : `${trimmed.replace(/[^0-9\-@]/g, '')}@g.us`;
     }
 
-    // Strip everything except digits
-    let clean = trimmed.replace(/\D/g, '');
-
-    // Remove leading zeros (e.g. 09876543210 -> 9876543210)
-    clean = clean.replace(/^0+/, '');
-
-    // If 10 digits (standard Indian number without country code), prepend 91
-    if (clean.length === 10) {
-      clean = `91${clean}`;
+    const sanitized = sanitizePhoneNumber(trimmed);
+    if (!sanitized.valid) {
+      return '';
     }
 
-    return clean.includes('@s.whatsapp.net') ? clean : `${clean}@s.whatsapp.net`;
+    return `${sanitized.phoneNumber}@s.whatsapp.net`;
   }
 
   /**
@@ -268,6 +383,7 @@ class BaileysService {
     this.status = {
       connected: false,
       qrCode: null,
+      pairingCode: null,
       phoneNumber: null,
       lastConnected: null,
     };

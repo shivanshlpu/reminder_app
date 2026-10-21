@@ -36,7 +36,6 @@ import {
 } from '../../utils/date';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { LanguageToggleButton } from '../../components/LanguageToggleButton';
 
 interface CategoryItem {
   id: number;
@@ -337,7 +336,6 @@ export default function ExpensesScreen() {
             }
             theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
           />
-          <LanguageToggleButton variant="header" />
           <TouchableOpacity
             style={styles.exportIconBtn}
             onPress={handleExportPdf}
@@ -601,8 +599,8 @@ export default function ExpensesScreen() {
           </View>
         )}
 
-        {/* INTERACTIVE MONTH NAVIGATOR (Available when browsing months or viewing monthly periods) */}
-        {(periodType === 'month_browser' || periodType === 'this_month' || periodType === 'last_month') && (
+        {/* INTERACTIVE MONTH NAVIGATOR (Available when browsing months or viewing previous periods) */}
+        {(periodType === 'month_browser' || isBrowsingHistory) && (
           <View style={styles.monthNavigator}>
             <TouchableOpacity onPress={handlePrevMonth} style={styles.monthNavBtn} activeOpacity={0.7}>
               <MaterialCommunityIcons name="chevron-left" size={24} color={Colors.primary} />
@@ -921,12 +919,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.primaryBg,
+    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderWidth: 1,
-    borderColor: Colors.primary + '25',
+    borderColor: Colors.borderLight,
+    ...Shadows.small,
   },
   customRangeContainer: {
     backgroundColor: '#F8FAFC',

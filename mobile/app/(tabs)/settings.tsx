@@ -20,7 +20,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { whatsappApi, WhatsAppStatus } from '../../services/whatsapp-api';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
-import { LanguageToggleButton } from '../../components/LanguageToggleButton';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
 export default function SettingsScreen() {
@@ -33,7 +32,15 @@ export default function SettingsScreen() {
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [backendUrl, setBackendUrlInput] = useState(whatsappApi.getBaseUrl());
 
+  // WhatsApp Connect Modal State
   const [showQrModal, setShowQrModal] = useState(false);
+  const [connectMode, setConnectMode] = useState<'phone' | 'qr'>('phone');
+  const [phoneInput, setPhoneInput] = useState('');
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [codeLoading, setCodeLoading] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -60,51 +67,161 @@ export default function SettingsScreen() {
   useEffect(() => {
     checkWhatsAppStatus();
     return () => {
-      stopQrPolling();
+      stopConnectionPolling();
     };
   }, [checkWhatsAppStatus]);
 
-  const stopQrPolling = () => {
+  const stopConnectionPolling = () => {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
     }
   };
 
-  const startQrPolling = () => {
-    stopQrPolling();
+  const startConnectionPolling = (mode: 'phone' | 'qr') => {
+    stopConnectionPolling();
     pollIntervalRef.current = setInterval(async () => {
-      const qrResult = await whatsappApi.getQrCode();
-      if (qrResult?.connected) {
-        stopQrPolling();
-        setShowQrModal(false);
-        checkWhatsAppStatus();
-        Alert.alert('Success 🎉', 'WhatsApp connected successfully!');
-      } else if (qrResult?.qrCodeDataUrl) {
-        setQrDataUrl(qrResult.qrCodeDataUrl);
-        setQrLoading(false);
+      try {
+        const status = await whatsappApi.getStatus();
+        if (status?.connected) {
+          stopConnectionPolling();
+          setShowQrModal(false);
+          setPairingCode(null);
+          setWaStatus(status);
+          Alert.alert(
+            'WhatsApp Connected 🎉',
+            `Successfully linked to WhatsApp account: +${status.phoneNumber || ''}`
+          );
+          return;
+        }
+
+        if (mode === 'qr') {
+          if (status?.qrCodeDataUrl) {
+            setQrDataUrl(status.qrCodeDataUrl);
+            setQrLoading(false);
+          } else {
+            const qrResult = await whatsappApi.getQrCode();
+            if (qrResult?.qrCodeDataUrl) {
+              setQrDataUrl(qrResult.qrCodeDataUrl);
+              setQrLoading(false);
+            }
+          }
+        }
+      } catch (e) {
+        // Continue polling silently
       }
-    }, 2000);
+    }, 2500);
   };
 
-  const handleInitWhatsApp = async () => {
-    setQrLoading(true);
+  const handleOpenConnectModal = async (initialMode: 'phone' | 'qr' = 'phone') => {
+    setConnectMode(initialMode);
     setShowQrModal(true);
-    setQrDataUrl(null);
+    setCodeError(null);
+    setCodeCopied(false);
 
-    try {
-      await whatsappApi.initialize();
-      startQrPolling();
-    } catch (error) {
-      Alert.alert('Error', 'Failed to initialize WhatsApp connection. Make sure backend server is running.');
-      setShowQrModal(false);
-      setQrLoading(false);
+    if (initialMode === 'qr') {
+      setQrLoading(true);
+      setQrDataUrl(null);
+      try {
+        await whatsappApi.initialize();
+        startConnectionPolling('qr');
+      } catch (error) {
+        setQrLoading(false);
+        setCodeError('Failed to initialize QR code generator. Check backend server.');
+      }
+    } else {
+      if (pairingCode) {
+        startConnectionPolling('phone');
+      }
     }
   };
 
-  const handleCloseQrModal = () => {
-    stopQrPolling();
+  const handleSwitchConnectMode = async (targetMode: 'phone' | 'qr') => {
+    setConnectMode(targetMode);
+    setCodeError(null);
+
+    if (targetMode === 'qr') {
+      if (!qrDataUrl) {
+        setQrLoading(true);
+        try {
+          await whatsappApi.initialize();
+          startConnectionPolling('qr');
+        } catch (error) {
+          setQrLoading(false);
+          setCodeError('Failed to initialize QR code.');
+        }
+      } else {
+        startConnectionPolling('qr');
+      }
+    } else {
+      if (pairingCode) {
+        startConnectionPolling('phone');
+      } else {
+        stopConnectionPolling();
+      }
+    }
+  };
+
+  const handleRequestPairingCode = async () => {
+    const raw = phoneInput.trim();
+    if (!raw) {
+      setCodeError('Please enter your WhatsApp mobile number.');
+      return;
+    }
+
+    // Clean non-digit characters
+    let clean = raw.replace(/\D/g, '');
+    while (clean.startsWith('0')) {
+      clean = clean.slice(1);
+    }
+
+    // Auto prepend 91 for standard 10-digit Indian numbers
+    if (clean.length === 10) {
+      clean = `91${clean}`;
+    }
+
+    if (clean.length < 10 || clean.length > 15) {
+      setCodeError(`Invalid phone number length (${clean.length} digits). Enter a 10-digit number or number with country code.`);
+      return;
+    }
+
+    setCodeLoading(true);
+    setCodeError(null);
+
+    try {
+      const result = await whatsappApi.requestPairingCode(clean);
+      if (result?.pairingCode) {
+        setPairingCode(result.pairingCode);
+        startConnectionPolling('phone');
+      } else {
+        setCodeError('Failed to get connection code from WhatsApp. Please retry.');
+      }
+    } catch (err: any) {
+      setCodeError(err?.message || 'Error connecting to WhatsApp servers. Please retry.');
+    } finally {
+      setCodeLoading(false);
+    }
+  };
+
+  const handleCopyCode = async () => {
+    if (!pairingCode) return;
+    const cleanCode = pairingCode.replace(/[^a-zA-Z0-9]/g, '');
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(cleanCode);
+      }
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2500);
+    } catch (e) {
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2500);
+    }
+  };
+
+  const handleCloseConnectModal = () => {
+    stopConnectionPolling();
     setShowQrModal(false);
+    setCodeError(null);
   };
 
   const handleDisconnectWhatsApp = async () => {
@@ -214,9 +331,6 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Language Switcher Card */}
-      <LanguageToggleButton variant="card" />
-
       {/* Grid wrapper for Desktop / Stacked for Mobile */}
       <View style={isWide ? styles.gridDesktop : undefined}>
         {/* WhatsApp Connection Section */}
@@ -242,15 +356,26 @@ export default function SettingsScreen() {
 
             <View style={styles.waActions}>
               {!waStatus?.connected ? (
-                <Button
-                  mode="contained"
-                  onPress={handleInitWhatsApp}
-                  buttonColor={Colors.secondary}
-                  icon="qrcode-scan"
-                  style={styles.waBtn}
-                >
-                  Connect WhatsApp & Scan QR
-                </Button>
+                <View style={{ gap: Spacing.sm }}>
+                  <Button
+                    mode="contained"
+                    onPress={() => handleOpenConnectModal('phone')}
+                    buttonColor={Colors.secondary}
+                    icon="cellphone-key"
+                    style={styles.waBtn}
+                  >
+                    Link with Mobile Number (Code)
+                  </Button>
+                  <Button
+                    mode="outlined"
+                    onPress={() => handleOpenConnectModal('qr')}
+                    textColor={Colors.primary}
+                    icon="qrcode-scan"
+                    style={styles.waBtn}
+                  >
+                    Scan QR Code Instead
+                  </Button>
+                </View>
               ) : (
                 <Button
                   mode="outlined"
@@ -357,50 +482,198 @@ export default function SettingsScreen() {
         </View>
       </View>
 
-      {/* Live QR Code Modal */}
+      {/* Live WhatsApp Connection Modal (Pairing Code & QR Code) */}
       <Portal>
         <Modal
           visible={showQrModal}
-          onDismiss={handleCloseQrModal}
+          onDismiss={handleCloseConnectModal}
           contentContainerStyle={styles.qrModal}
         >
+          {/* Header */}
           <View style={styles.qrHeader}>
-            <MaterialCommunityIcons name="qrcode-scan" size={36} color={Colors.primary} />
-            <Text style={styles.qrTitle}>Pair WhatsApp</Text>
+            <MaterialCommunityIcons name="whatsapp" size={40} color="#25D366" />
+            <Text style={styles.qrTitle}>Connect WhatsApp</Text>
             <Text style={styles.qrSubtitle}>
-              Open WhatsApp on your phone → Linked Devices → Link a Device, then scan this code:
+              Link PocketRadar with your WhatsApp to automatically dispatch geo-fence alerts.
             </Text>
           </View>
 
-          <View style={styles.qrContainer}>
-            {qrDataUrl ? (
-              <Image
-                source={{ uri: qrDataUrl }}
-                style={styles.qrImage}
-                resizeMode="contain"
-              />
-            ) : (
-              <View style={styles.qrLoadingBox}>
-                <ActivityIndicator size="large" color={Colors.primary} />
-                <Text style={styles.qrLoadingText}>Generating QR Code from server...</Text>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.qrFooter}>
-            <Text style={styles.qrStatusHint}>
-              {qrDataUrl ? '🔄 Live updating... Scan with WhatsApp camera' : 'Connecting to Baileys engine...'}
-            </Text>
-            <Button
-              mode="contained"
-              onPress={handleCloseQrModal}
-              buttonColor={Colors.background}
-              textColor={Colors.text}
-              style={{ marginTop: Spacing.md, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border }}
+          {/* Segmented Mode Tabs */}
+          <View style={styles.connectTabContainer}>
+            <TouchableOpacity
+              style={[styles.connectTabBtn, connectMode === 'phone' && styles.connectTabBtnActive]}
+              onPress={() => handleSwitchConnectMode('phone')}
+              activeOpacity={0.8}
             >
-              Close Window
-            </Button>
+              <Text style={[styles.connectTabText, connectMode === 'phone' && styles.connectTabTextActive]}>
+                📱 Mobile Number (Code)
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.connectTabBtn, connectMode === 'qr' && styles.connectTabBtnActive]}
+              onPress={() => handleSwitchConnectMode('qr')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.connectTabText, connectMode === 'qr' && styles.connectTabTextActive]}>
+                📷 Scan QR Code
+              </Text>
+            </TouchableOpacity>
           </View>
+
+          {/* Tab 1: Phone Number Pairing Code Mode */}
+          {connectMode === 'phone' ? (
+            <View style={{ width: '100%', alignItems: 'center' }}>
+              {!pairingCode ? (
+                <>
+                  <Text style={styles.phoneFormSubtitle}>
+                    Enter your 10-digit WhatsApp phone number. We'll generate an 8-character connection code to enter in your WhatsApp app.
+                  </Text>
+
+                  <View style={styles.phoneInputRow}>
+                    <View style={styles.countryBadge}>
+                      <Text style={styles.countryBadgeText}>🇮🇳 +91</Text>
+                    </View>
+                    <TextInput
+                      mode="outlined"
+                      value={phoneInput}
+                      onChangeText={(val) => {
+                        setPhoneInput(val);
+                        if (codeError) setCodeError(null);
+                      }}
+                      placeholder="98765 43210"
+                      keyboardType="phone-pad"
+                      outlineColor={Colors.border}
+                      activeOutlineColor={Colors.primary}
+                      textColor={Colors.text}
+                      style={styles.phoneField}
+                      theme={{ colors: { background: Colors.surface, onSurfaceVariant: Colors.textSecondary } }}
+                      left={<TextInput.Icon icon="phone" color={Colors.textSecondary} />}
+                    />
+                  </View>
+
+                  {codeError && (
+                    <View style={styles.errorBanner}>
+                      <MaterialCommunityIcons name="alert-circle" size={18} color={Colors.accent} />
+                      <Text style={styles.errorBannerText}>{codeError}</Text>
+                    </View>
+                  )}
+
+                  <Button
+                    mode="contained"
+                    onPress={handleRequestPairingCode}
+                    loading={codeLoading}
+                    disabled={codeLoading}
+                    buttonColor={Colors.secondary}
+                    icon="cellphone-key"
+                    style={{ width: '100%', borderRadius: BorderRadius.md, paddingVertical: 4 }}
+                  >
+                    {codeLoading ? 'Generating Connection Code...' : 'Get WhatsApp Connection Code'}
+                  </Button>
+
+                  <View style={styles.tipBox}>
+                    <Text style={styles.tipText}>
+                      💡 <Text style={{ fontWeight: '700' }}>No camera needed!</Text> You can link directly from your phone by typing this code in WhatsApp settings.
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  {/* Generated Pairing Code Card */}
+                  <View style={styles.codeCard}>
+                    <Text style={styles.codeCardLabel}>ENTER THIS CODE IN WHATSAPP</Text>
+                    <Text style={styles.codeDisplay}>{pairingCode}</Text>
+                    <Button
+                      mode="contained"
+                      onPress={handleCopyCode}
+                      buttonColor={codeCopied ? Colors.success : Colors.primary}
+                      icon={codeCopied ? 'check' : 'content-copy'}
+                      style={styles.copyCodeBtn}
+                    >
+                      {codeCopied ? 'Code Copied! 🎉' : 'Copy Connection Code'}
+                    </Button>
+                  </View>
+
+                  {/* Step-by-Step Instructions */}
+                  <View style={styles.stepsCard}>
+                    <Text style={styles.stepsTitle}>Follow these steps on your phone:</Text>
+                    <View style={styles.stepItem}>
+                      <Text style={styles.stepBullet}>1.</Text>
+                      <Text style={styles.stepText}>Open <Text style={styles.stepBold}>WhatsApp</Text> on your phone (+{phoneInput}).</Text>
+                    </View>
+                    <View style={styles.stepItem}>
+                      <Text style={styles.stepBullet}>2.</Text>
+                      <Text style={styles.stepText}>Go to <Text style={styles.stepBold}>Settings</Text> (or ⋮ menu) → <Text style={styles.stepBold}>Linked Devices</Text>.</Text>
+                    </View>
+                    <View style={styles.stepItem}>
+                      <Text style={styles.stepBullet}>3.</Text>
+                      <Text style={styles.stepText}>Tap <Text style={styles.stepBold}>Link a Device</Text>.</Text>
+                    </View>
+                    <View style={styles.stepItem}>
+                      <Text style={styles.stepBullet}>4.</Text>
+                      <Text style={styles.stepText}>Tap <Text style={styles.stepBold}>"Link with phone number instead"</Text> at the bottom.</Text>
+                    </View>
+                    <View style={styles.stepItem}>
+                      <Text style={styles.stepBullet}>5.</Text>
+                      <Text style={styles.stepText}>Enter the 8-character code: <Text style={styles.stepBold}>{pairingCode}</Text></Text>
+                    </View>
+                  </View>
+
+                  {/* Live Sync Status */}
+                  <View style={styles.liveSyncCard}>
+                    <ActivityIndicator size="small" color={Colors.primary} />
+                    <Text style={styles.liveSyncText}>Waiting for link approval in WhatsApp... (syncs automatically)</Text>
+                  </View>
+
+                  <Button
+                    mode="text"
+                    onPress={() => {
+                      setPairingCode(null);
+                      stopConnectionPolling();
+                    }}
+                    textColor={Colors.textSecondary}
+                    icon="arrow-left"
+                    style={{ marginTop: Spacing.xs }}
+                  >
+                    Change Phone Number / Request New Code
+                  </Button>
+                </>
+              )}
+            </View>
+          ) : (
+            /* Tab 2: QR Code Mode */
+            <View style={{ width: '100%', alignItems: 'center' }}>
+              <View style={styles.qrContainer}>
+                {qrDataUrl ? (
+                  <Image
+                    source={{ uri: qrDataUrl }}
+                    style={styles.qrImage}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.qrLoadingBox}>
+                    <ActivityIndicator size="large" color={Colors.primary} />
+                    <Text style={styles.qrLoadingText}>Generating QR Code from server...</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.qrFooter}>
+                <Text style={styles.qrStatusHint}>
+                  {qrDataUrl ? '🔄 Live updating... Scan with WhatsApp camera' : 'Connecting to Baileys engine...'}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <Button
+            mode="contained"
+            onPress={handleCloseConnectModal}
+            buttonColor={Colors.background}
+            textColor={Colors.text}
+            style={{ marginTop: Spacing.md, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border, width: '100%' }}
+          >
+            Close Window
+          </Button>
         </Modal>
 
         {/* Universal Sign Out Confirmation Modal */}
@@ -579,6 +852,182 @@ const styles = StyleSheet.create({
   qrHeader: { alignItems: 'center', marginBottom: Spacing.md },
   qrTitle: { fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.text, marginTop: Spacing.xs },
   qrSubtitle: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, textAlign: 'center', marginTop: 4, paddingHorizontal: Spacing.xs },
+
+  connectTabContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.full,
+    padding: 4,
+    marginVertical: Spacing.md,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  connectTabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: BorderRadius.full,
+  },
+  connectTabBtnActive: {
+    backgroundColor: Colors.primary,
+  },
+  connectTabText: {
+    fontSize: Fonts.sizes.xs,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  connectTabTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  phoneFormSubtitle: {
+    fontSize: Fonts.sizes.xs,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
+    lineHeight: 18,
+  },
+  phoneInputRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+    width: '100%',
+  },
+  countryBadge: {
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  countryBadgeText: {
+    fontSize: Fonts.sizes.md,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  phoneField: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
+    width: '100%',
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: Fonts.sizes.xs,
+    color: Colors.accent,
+    fontWeight: '600',
+  },
+  tipBox: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    marginTop: Spacing.md,
+    width: '100%',
+  },
+  tipText: {
+    fontSize: Fonts.sizes.xs,
+    color: '#1E40AF',
+    lineHeight: 18,
+  },
+
+  codeCard: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: Spacing.sm,
+    ...Shadows.small,
+  },
+  codeCardLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#065F46',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  codeDisplay: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#065F46',
+    letterSpacing: 4,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    marginBottom: Spacing.md,
+  },
+  copyCodeBtn: {
+    borderRadius: BorderRadius.md,
+    minWidth: 170,
+  },
+
+  stepsCard: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    width: '100%',
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  stepsTitle: {
+    fontSize: Fonts.sizes.xs,
+    fontWeight: '700',
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  stepItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 4,
+  },
+  stepBullet: {
+    fontSize: Fonts.sizes.xs,
+    fontWeight: '700',
+    color: Colors.primary,
+    width: 18,
+  },
+  stepText: {
+    flex: 1,
+    fontSize: 11,
+    color: Colors.textSecondary,
+    lineHeight: 16,
+  },
+  stepBold: {
+    fontWeight: '700',
+    color: Colors.text,
+  },
+
+  liveSyncCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginVertical: Spacing.xs,
+  },
+  liveSyncText: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    fontWeight: '600',
+  },
   qrContainer: {
     width: 250,
     height: 250,

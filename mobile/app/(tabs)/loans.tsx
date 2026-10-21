@@ -1159,11 +1159,23 @@ export default function KhataBookScreen() {
           contentContainerStyle={styles.modal}
         >
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.modalTitle}>
-                {editingShopId ? t('modal_shop_title_edit') : t('modal_shop_title_new')}
-              </Text>
-              <Text style={styles.modalSubtitle}>{t('modal_shop_sub')}</Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {/* Modal Header with Close Button */}
+              <View style={styles.modalHeaderRow}>
+                <View style={{ flex: 1, paddingRight: Spacing.sm }}>
+                  <Text style={styles.modalTitle}>
+                    {editingShopId ? t('modal_shop_title_edit') : t('modal_shop_title_new')}
+                  </Text>
+                  <Text style={styles.modalSubtitle}>{t('modal_shop_sub')}</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setShowShopModal(false)}
+                  style={styles.modalCloseBtn}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <MaterialCommunityIcons name="close" size={22} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
 
               <TextInput
                 label={t('modal_shop_name_label')}
@@ -1230,7 +1242,12 @@ export default function KhataBookScreen() {
               />
 
               <View style={styles.modalActions}>
-                <Button mode="outlined" onPress={() => setShowShopModal(false)} textColor={Colors.textSecondary}>
+                <Button
+                  mode="outlined"
+                  onPress={() => setShowShopModal(false)}
+                  textColor={Colors.textSecondary}
+                  style={styles.modalCancelBtn}
+                >
                   {t('modal_shop_cancel')}
                 </Button>
                 <Button
@@ -1239,6 +1256,7 @@ export default function KhataBookScreen() {
                   onPress={handleSaveShop}
                   loading={savingShop}
                   disabled={savingShop}
+                  style={styles.modalSubmitBtn}
                 >
                   {editingShopId ? t('modal_shop_save_edit') : t('modal_shop_save_new')}
                 </Button>
@@ -1256,13 +1274,25 @@ export default function KhataBookScreen() {
           contentContainerStyle={styles.modal}
         >
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={styles.modalTitle}>
-                {entryType === 'purchase' ? t('modal_entry_title_purchase') : t('modal_entry_title_payment')}
-              </Text>
-              <Text style={styles.modalSubtitle}>
-                Shop: <Text style={{ fontWeight: '800', color: Colors.primary }}>{shops.find((s) => s.id === entryShopId)?.name}</Text>
-              </Text>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {/* Modal Header with Close Button */}
+              <View style={styles.modalHeaderRow}>
+                <View style={{ flex: 1, paddingRight: Spacing.sm }}>
+                  <Text style={styles.modalTitle}>
+                    {entryType === 'purchase' ? t('modal_entry_title_purchase') : t('modal_entry_title_payment')}
+                  </Text>
+                  <Text style={styles.modalSubtitle}>
+                    Shop: <Text style={{ fontWeight: '800', color: Colors.primary }}>{shops.find((s) => s.id === entryShopId)?.name}</Text>
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setShowEntryModal(false)}
+                  style={styles.modalCloseBtn}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <MaterialCommunityIcons name="close" size={22} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
 
               {/* Toggle Entry Type */}
               <SegmentedButtons
@@ -1301,7 +1331,7 @@ export default function KhataBookScreen() {
                     mode="outlined"
                     placeholder={t('modal_entry_items_placeholder')}
                     multiline
-                    numberOfLines={3}
+                    numberOfLines={2}
                     style={styles.modalInput}
                     outlineColor={Colors.border}
                     activeOutlineColor={Colors.primary}
@@ -1309,9 +1339,13 @@ export default function KhataBookScreen() {
                     theme={{ colors: { background: Colors.surface } }}
                   />
 
-                  {/* Fast Tap Item Chips */}
+                  {/* Fast Tap Item Chips in Horizontal Scroll */}
                   <Text style={styles.quickItemsLabel}>{t('modal_entry_fast_chips_label')}</Text>
-                  <View style={styles.quickChipsWrap}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.quickChipsScroll}
+                  >
                     {quickItems.map((item) => (
                       <TouchableOpacity
                         key={item}
@@ -1322,7 +1356,7 @@ export default function KhataBookScreen() {
                         <Text style={styles.quickItemChipText}>+ {item}</Text>
                       </TouchableOpacity>
                     ))}
-                  </View>
+                  </ScrollView>
                 </View>
               )}
 
@@ -1361,7 +1395,12 @@ export default function KhataBookScreen() {
               </View>
 
               <View style={styles.modalActions}>
-                <Button mode="outlined" onPress={() => setShowEntryModal(false)} textColor={Colors.textSecondary}>
+                <Button
+                  mode="outlined"
+                  onPress={() => setShowEntryModal(false)}
+                  textColor={Colors.textSecondary}
+                  style={styles.modalCancelBtn}
+                >
                   {t('common_cancel')}
                 </Button>
                 <Button
@@ -1370,6 +1409,7 @@ export default function KhataBookScreen() {
                   onPress={handleSaveEntry}
                   loading={savingEntry}
                   disabled={savingEntry}
+                  style={styles.modalSubmitBtn}
                 >
                   {entryType === 'purchase' ? t('modal_entry_save_purchase') : t('modal_entry_save_payment')}
                 </Button>
@@ -2101,7 +2141,26 @@ const styles = StyleSheet.create({
   modalSubtitle: {
     fontSize: Fonts.sizes.xs,
     color: Colors.textSecondary,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.xs,
+  },
+  modalCloseBtn: {
+    padding: 6,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+  },
+  quickChipsScroll: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingVertical: 4,
+    marginBottom: Spacing.xs,
   },
   modalInput: {
     backgroundColor: Colors.surface,
@@ -2184,9 +2243,18 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: Spacing.md,
+    gap: Spacing.sm,
     marginTop: Spacing.md,
+    width: '100%',
+  },
+  modalCancelBtn: {
+    flex: 1,
+    borderRadius: BorderRadius.md,
+    borderColor: Colors.border,
+  },
+  modalSubmitBtn: {
+    flex: 1,
+    borderRadius: BorderRadius.md,
   },
   pickContactBtn: {
     flexDirection: 'row',

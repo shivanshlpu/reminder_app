@@ -21,6 +21,7 @@ function getInitialBackendUrl(): string {
 export interface WhatsAppStatus {
   connected: boolean;
   qrCode: string | null;
+  pairingCode?: string | null;
   qrCodeDataUrl?: string | null;
   phoneNumber: string | null;
   lastConnected: string | null;
@@ -100,6 +101,23 @@ class WhatsAppApi {
       method: 'POST',
     });
     return response.success;
+  }
+
+  /**
+   * Request an 8-character pairing code for connecting WhatsApp with phone number.
+   */
+  async requestPairingCode(phoneNumber: string): Promise<{ pairingCode: string; message?: string } | null> {
+    const response = await this.request<{ pairingCode: string; message?: string }>(
+      '/api/whatsapp/pairing-code',
+      {
+        method: 'POST',
+        body: JSON.stringify({ phoneNumber }),
+      }
+    );
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to request WhatsApp pairing code');
+    }
+    return response.data || null;
   }
 
   /**

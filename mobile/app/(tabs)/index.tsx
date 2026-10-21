@@ -30,7 +30,6 @@ import {
 } from '../../utils/date';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { LanguageToggleButton } from '../../components/LanguageToggleButton';
 
 interface DashboardStats {
   monthlyTotal: number;
@@ -292,7 +291,6 @@ export default function DashboardScreen() {
           </Text>
         </View>
         <View style={styles.headerActions}>
-          <LanguageToggleButton variant="header" />
           <TouchableOpacity
             onPress={onRefresh}
             style={styles.headerBtn}

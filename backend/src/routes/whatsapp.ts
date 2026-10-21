@@ -112,6 +112,41 @@ router.post('/initialize', async (req: Request, res: Response) => {
 });
 
 /**
+ * POST /api/whatsapp/pairing-code
+ * Requests an 8-character WhatsApp pairing code for linking with a mobile phone number.
+ * Open WhatsApp on phone -> Linked Devices -> Link with phone number instead -> Enter this code.
+ */
+router.post('/pairing-code', async (req: Request, res: Response) => {
+  try {
+    const rawPhoneNumber = req.body.phoneNumber ?? req.body.phone;
+
+    if (!rawPhoneNumber) {
+      res.status(400).json({
+        success: false,
+        error: 'Phone number is required to request a pairing code.',
+      });
+      return;
+    }
+
+    const pairingCode = await baileysService.requestPairingCode(rawPhoneNumber);
+
+    res.json({
+      success: true,
+      data: {
+        pairingCode,
+        message: 'Pairing code generated successfully. Enter this code on your phone in WhatsApp under Linked Devices -> Link with phone number instead.',
+      },
+    });
+  } catch (error: any) {
+    logger.error({ error }, 'Failed to generate WhatsApp pairing code');
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Failed to generate WhatsApp pairing code',
+    });
+  }
+});
+
+/**
  * POST /api/whatsapp/send
  * Sends a WhatsApp message to an individual or group.
  */
@@ -146,29 +181,49 @@ router.post('/send', async (req: Request, res: Response) => {
         // Safe 1.5s delay between multiple recipients to prevent WhatsApp rate-limit / spam block
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
+
+      const targetPhone =
+        typeof recipient === 'object' && recipient !== null
+          ? (recipient.phone || recipient.phoneNumber || recipient.number)
+          : recipient;
+      const isGroup =
+        typeof recipient === 'object' && recipient !== null
+          ? Boolean(recipient.isGroup)
+          : false;
+
+      if (!targetPhone) {
+        results.push({
+          phone: '',
+          isGroup,
+          success: false,
+          error: 'Missing phone number in recipient payload',
+        });
+        continue;
+      }
+
       try {
         const result = await baileysService.sendMessage(
-          recipient.phone,
+          targetPhone,
           messageContent,
-          recipient.isGroup
+          isGroup
         );
         results.push({
-          phone: recipient.phone,
-          isGroup: recipient.isGroup,
+          phone: String(targetPhone),
+          isGroup,
           ...result,
         });
       } catch (err: any) {
-        logger.error({ error: err, recipient: recipient.phone }, 'Error in recipient dispatch loop');
+        logger.error({ error: err, recipient: targetPhone }, 'Error in recipient dispatch loop');
         results.push({
-          phone: recipient.phone,
-          isGroup: recipient.isGroup,
+          phone: String(targetPhone),
+          isGroup,
           success: false,
           error: err?.message || 'Failed to dispatch message',
         });
       }
     }
 
-    const allSuccessful = results.every((r) => r.success);
+    const allSuccessful = results.length > 0 && results.every((r) => r.success);
 
     res.json({
       success: allSuccessful,
