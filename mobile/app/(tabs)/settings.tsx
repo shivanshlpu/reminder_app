@@ -37,6 +37,7 @@ export default function SettingsScreen() {
   const [connectMode, setConnectMode] = useState<'phone' | 'qr'>('phone');
   const [phoneInput, setPhoneInput] = useState('');
   const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [submittedPhone, setSubmittedPhone] = useState<string>('');
   const [codeLoading, setCodeLoading] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -175,6 +176,11 @@ export default function SettingsScreen() {
       clean = clean.slice(1);
     }
 
+    // Fix accidental double '9191' (when user types 91 in input while country prefix is already 91)
+    if (clean.startsWith('9191') && clean.length === 14) {
+      clean = clean.slice(2);
+    }
+
     // Auto prepend 91 for standard 10-digit Indian numbers
     if (clean.length === 10) {
       clean = `91${clean}`;
@@ -187,6 +193,7 @@ export default function SettingsScreen() {
 
     setCodeLoading(true);
     setCodeError(null);
+    setSubmittedPhone(clean);
 
     try {
       const result = await whatsappApi.requestPairingCode(clean);
@@ -593,12 +600,21 @@ export default function SettingsScreen() {
                     </Button>
                   </View>
 
+                  {/* Phone Match Notice */}
+                  <View style={styles.numberWarningBox}>
+                    <MaterialCommunityIcons name="shield-account" size={20} color="#0369A1" />
+                    <Text style={styles.numberWarningText}>
+                      Code generated for account: <Text style={{ fontWeight: '800' }}>+{submittedPhone || phoneInput}</Text>.{'\n'}
+                      <Text style={{ fontWeight: '700' }}>Important:</Text> Open WhatsApp on your phone → Settings → tap your Profile name to ensure your phone number matches <Text style={{ fontWeight: '800' }}>+{submittedPhone || phoneInput}</Text> exactly!
+                    </Text>
+                  </View>
+
                   {/* Step-by-Step Instructions */}
                   <View style={styles.stepsCard}>
                     <Text style={styles.stepsTitle}>Follow these steps on your phone:</Text>
                     <View style={styles.stepItem}>
                       <Text style={styles.stepBullet}>1.</Text>
-                      <Text style={styles.stepText}>Open <Text style={styles.stepBold}>WhatsApp</Text> on your phone (+{phoneInput}).</Text>
+                      <Text style={styles.stepText}>Open <Text style={styles.stepBold}>WhatsApp</Text> on your phone.</Text>
                     </View>
                     <View style={styles.stepItem}>
                       <Text style={styles.stepBullet}>2.</Text>
@@ -977,6 +993,25 @@ const styles = StyleSheet.create({
   copyCodeBtn: {
     borderRadius: BorderRadius.md,
     minWidth: 170,
+  },
+
+  numberWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    width: '100%',
+    marginVertical: Spacing.xs,
+  },
+  numberWarningText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#0369A1',
+    lineHeight: 16,
   },
 
   stepsCard: {

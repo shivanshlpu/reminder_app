@@ -3,6 +3,7 @@
  * Communicates with the Node.js backend for WhatsApp operations.
  */
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 function getInitialBackendUrl(): string {
   if (process.env.EXPO_PUBLIC_BACKEND_URL) {
@@ -12,8 +13,14 @@ function getInitialBackendUrl(): string {
     const hostname = window.location.hostname || 'localhost';
     return `http://${hostname}:3001`;
   }
+  // If running in Expo on physical device or emulator, resolve host machine IP
+  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest?.debuggerHost;
+  if (hostUri) {
+    const host = hostUri.split(':')[0];
+    return `http://${host}:3001`;
+  }
   if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:3001';
+    return 'http://192.168.1.19:3001';
   }
   return 'http://localhost:3001';
 }
