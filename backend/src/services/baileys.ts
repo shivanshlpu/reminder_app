@@ -177,7 +177,7 @@ class BaileysService {
         version: waVersion,
         printQRInTerminal: !forPairing,
         logger: pino({ level: 'silent' }) as any,
-        browser: ['Chrome (Linux)', 'Chrome', '122.0.0.0'],
+        browser: Browsers.ubuntu('Chrome'),
         connectTimeoutMs: 60000,
         defaultQueryTimeoutMs: 60000,
         keepAliveIntervalMs: 25000,

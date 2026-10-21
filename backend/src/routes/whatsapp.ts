@@ -119,6 +119,7 @@ router.post('/initialize', async (req: Request, res: Response) => {
 router.post('/pairing-code', async (req: Request, res: Response) => {
   try {
     const rawPhoneNumber = req.body.phoneNumber ?? req.body.phone;
+    logger.info({ rawPhoneNumber }, 'Incoming POST /api/whatsapp/pairing-code request');
 
     if (!rawPhoneNumber) {
       res.status(400).json({
@@ -138,7 +139,7 @@ router.post('/pairing-code', async (req: Request, res: Response) => {
       },
     });
   } catch (error: any) {
-    logger.error({ error }, 'Failed to generate WhatsApp pairing code');
+    logger.error({ error, rawPhoneNumber: req.body.phoneNumber }, 'Failed to generate WhatsApp pairing code');
     res.status(400).json({
       success: false,
       error: error.message || 'Failed to generate WhatsApp pairing code',

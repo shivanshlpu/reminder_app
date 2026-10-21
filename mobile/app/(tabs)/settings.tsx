@@ -22,6 +22,23 @@ import { whatsappApi, WhatsAppStatus } from '../../services/whatsapp-api';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
+export function formatDisplayPhone(raw: string): string {
+  if (!raw) return '';
+  let digits = raw.replace(/\D/g, '');
+  while (digits.startsWith('0')) digits = digits.slice(1);
+  if (digits.length === 10) {
+    return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    const local = digits.slice(2);
+    return `+91 ${local.slice(0, 5)} ${local.slice(5)}`;
+  }
+  if (digits.length > 10) {
+    return `+${digits}`;
+  }
+  return digits;
+}
+
 export default function SettingsScreen() {
   const { user, logout } = useAuth();
   const { isWide } = useResponsiveLayout();
@@ -558,6 +575,18 @@ export default function SettingsScreen() {
                     />
                   </View>
 
+                  {phoneInput.trim().length > 0 && (
+                    <View style={styles.phonePreviewBox}>
+                      <MaterialCommunityIcons name="whatsapp" size={16} color="#16A34A" />
+                      <Text style={styles.phonePreviewText}>
+                        Account to pair:{' '}
+                        <Text style={{ fontWeight: '800', color: Colors.primary }}>
+                          {formatDisplayPhone(phoneInput)}
+                        </Text>
+                      </Text>
+                    </View>
+                  )}
+
                   {codeError && (
                     <View style={styles.errorBanner}>
                       <MaterialCommunityIcons name="alert-circle" size={18} color={Colors.accent} />
@@ -579,7 +608,7 @@ export default function SettingsScreen() {
 
                   <View style={styles.tipBox}>
                     <Text style={styles.tipText}>
-                      💡 <Text style={{ fontWeight: '700' }}>No camera needed!</Text> You can link directly from your phone by typing this code in WhatsApp settings.
+                      💡 <Text style={{ fontWeight: '700' }}>No camera needed!</Text> Link directly from your phone by typing this code in WhatsApp settings. If pairing code fails on your network, tap <Text style={{ fontWeight: '700' }}>"Scan QR Code"</Text> above to connect instantly in 1 second!
                     </Text>
                   </View>
                 </>
@@ -604,8 +633,8 @@ export default function SettingsScreen() {
                   <View style={styles.numberWarningBox}>
                     <MaterialCommunityIcons name="shield-account" size={20} color="#0369A1" />
                     <Text style={styles.numberWarningText}>
-                      Code generated for account: <Text style={{ fontWeight: '800' }}>+{submittedPhone || phoneInput}</Text>.{'\n'}
-                      <Text style={{ fontWeight: '700' }}>Important:</Text> Open WhatsApp on your phone → Settings → tap your Profile name to ensure your phone number matches <Text style={{ fontWeight: '800' }}>+{submittedPhone || phoneInput}</Text> exactly!
+                      Code generated for account: <Text style={{ fontWeight: '800' }}>{formatDisplayPhone(submittedPhone || phoneInput)}</Text>.{'\n'}
+                      <Text style={{ fontWeight: '700' }}>Important:</Text> Open WhatsApp on your phone → Settings → tap your Profile name to ensure your phone number is <Text style={{ fontWeight: '800' }}>{formatDisplayPhone(submittedPhone || phoneInput)}</Text>!
                     </Text>
                   </View>
 
@@ -614,7 +643,7 @@ export default function SettingsScreen() {
                     <Text style={styles.stepsTitle}>Follow these steps on your phone:</Text>
                     <View style={styles.stepItem}>
                       <Text style={styles.stepBullet}>1.</Text>
-                      <Text style={styles.stepText}>Open <Text style={styles.stepBold}>WhatsApp</Text> on your phone.</Text>
+                      <Text style={styles.stepText}>Open <Text style={styles.stepBold}>WhatsApp</Text> on your phone ({formatDisplayPhone(submittedPhone || phoneInput)}).</Text>
                     </View>
                     <View style={styles.stepItem}>
                       <Text style={styles.stepBullet}>2.</Text>
@@ -930,6 +959,24 @@ const styles = StyleSheet.create({
   phoneField: {
     flex: 1,
     backgroundColor: Colors.surface,
+  },
+  phonePreviewBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    marginBottom: Spacing.sm,
+    width: '100%',
+  },
+  phonePreviewText: {
+    fontSize: Fonts.sizes.xs,
+    color: '#15803D',
+    fontWeight: '600',
   },
   errorBanner: {
     flexDirection: 'row',
