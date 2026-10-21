@@ -8,6 +8,7 @@ import makeWASocket, {
   WASocket,
   ConnectionState,
   Browsers,
+  fetchLatestBaileysVersion,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
@@ -98,6 +99,8 @@ class BaileysService {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private qrListeners: Array<(qr: string) => void> = [];
   private statusListeners: Array<(status: WhatsAppStatus) => void> = [];
+  private activePairingPhone: string | null = null;
+  private lastPairingRequest: { phone: string; timestamp: number } | null = null;
 
   constructor() {
     this.authDir = process.env.WHATSAPP_AUTH_DIR || path.join(process.cwd(), 'auth_info');
@@ -117,7 +120,7 @@ class BaileysService {
   /**
    * Initialize or re-initialize the WhatsApp connection.
    */
-  async initialize(forceFresh: boolean = false): Promise<void> {
+  async initialize(forceFresh: boolean = false, forPairing: boolean = false): Promise<void> {
     if (this.isInitializing) {
       logger.info('WhatsApp initialization is already active');
       return;
@@ -148,6 +151,16 @@ class BaileysService {
         fs.mkdirSync(this.authDir, { recursive: true });
       }
 
+      // Fetch the latest WhatsApp Web version to prevent protocol mismatch / "Couldn't link device" errors
+      let waVersion: [number, number, number] | undefined;
+      try {
+        const versionInfo = await fetchLatestBaileysVersion();
+        waVersion = versionInfo.version;
+        logger.info({ waVersion }, 'Loaded WhatsApp Web protocol version');
+      } catch (err) {
+        waVersion = [2, 3000, 1043857760];
+      }
+
       const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
 
       if (this.sock) {
@@ -161,18 +174,22 @@ class BaileysService {
 
       this.sock = makeWASocket({
         auth: state,
-        printQRInTerminal: true,
+        version: waVersion,
+        printQRInTerminal: !forPairing,
         logger: pino({ level: 'silent' }) as any,
-        browser: Browsers.ubuntu('Chrome'),
+        browser: ['Chrome (Linux)', 'Chrome', '122.0.0.0'],
         connectTimeoutMs: 60000,
-        qrTimeout: 60000,
         defaultQueryTimeoutMs: 60000,
+        keepAliveIntervalMs: 25000,
+        emitOwnEvents: false,
+        retryRequestDelayMs: 250,
       });
 
       this.sock.ev.on('connection.update', (update: Partial<ConnectionState>) => {
         const { connection, lastDisconnect, qr } = update;
 
-        if (qr) {
+        // Only register QR codes if we are not actively in phone pairing code mode
+        if (qr && !this.activePairingPhone && !forPairing) {
           this.status.qrCode = qr;
           logger.info('QR code received — scan with WhatsApp');
           this.notifyQrListeners(qr);
@@ -181,29 +198,47 @@ class BaileysService {
         if (connection === 'close') {
           const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
           const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+          const isRestartRequired =
+            statusCode === DisconnectReason.restartRequired || statusCode === 515;
 
           this.status.connected = false;
           this.status.qrCode = null;
-          this.status.pairingCode = null;
-          this.notifyStatusListeners();
           this.isInitializing = false;
 
           if (isLoggedOut) {
             logger.info('Logged out from WhatsApp. Session cleared.');
+            this.status.pairingCode = null;
+            this.activePairingPhone = null;
             this.clearAuthFolder();
             this.reconnectAttempts = 0;
+            this.notifyStatusListeners();
+          } else if (isRestartRequired) {
+            // CRITICAL: Code 515 (restartRequired) is sent by WhatsApp right when the user enters the pairing code.
+            // WhatsApp forces a socket reconnect to load newly written auth creds.
+            // Reconnect immediately (300ms) with existing creds so WhatsApp on phone does NOT time out with "Couldn't link device"!
+            logger.info('WhatsApp stream restart required (code 515) for pairing handshake. Reconnecting immediately...');
+            this.reconnectAttempts = 0;
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => {
+              this.initialize(false, Boolean(this.activePairingPhone)).catch((err) => {
+                logger.error({ error: err }, 'Reconnection after 515 failed');
+              });
+            }, 300);
           } else {
             this.reconnectAttempts++;
-            const backoffDelay = Math.min(30000, 3000 * Math.pow(1.5, Math.min(this.reconnectAttempts, 6)));
-            logger.info(`Reconnecting to WhatsApp in ${Math.round(backoffDelay / 1000)}s... attempt #${this.reconnectAttempts}`);
+            const backoffDelay = Math.min(30000, 2000 * Math.pow(1.4, Math.min(this.reconnectAttempts, 5)));
+            logger.info(`WhatsApp connection closed (code: ${statusCode}). Reconnecting in ${Math.round(backoffDelay / 1000)}s... attempt #${this.reconnectAttempts}`);
+            if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
             this.reconnectTimer = setTimeout(() => {
-              this.initialize(false);
+              this.initialize(false, Boolean(this.activePairingPhone)).catch(() => {});
             }, backoffDelay);
+            this.notifyStatusListeners();
           }
         } else if (connection === 'open') {
           this.status.connected = true;
           this.status.qrCode = null;
           this.status.pairingCode = null;
+          this.activePairingPhone = null;
           this.status.lastConnected = new Date().toISOString();
           this.reconnectAttempts = 0;
           this.isInitializing = false;
@@ -212,7 +247,7 @@ class BaileysService {
             this.status.phoneNumber = this.sock.user.id.split(':')[0] || null;
           }
 
-          logger.info(`WhatsApp connected successfully! Account: +${this.status.phoneNumber}`);
+          logger.info(`WhatsApp connected successfully! Linked Account: +${this.status.phoneNumber}`);
           this.notifyStatusListeners();
         }
       });
@@ -241,35 +276,46 @@ class BaileysService {
       throw new Error(`Already connected to WhatsApp account: +${this.status.phoneNumber}`);
     }
 
-    // Initialize socket if needed
-    if (!this.sock) {
-      await this.initialize(false);
+    // Cooldown check: if requested within 15 seconds for same number, return existing code to prevent 429 rate limit
+    const now = Date.now();
+    if (
+      this.lastPairingRequest &&
+      this.lastPairingRequest.phone === cleanNumber &&
+      now - this.lastPairingRequest.timestamp < 15000 &&
+      this.status.pairingCode
+    ) {
+      logger.info(`Returning recently generated pairing code for +${cleanNumber} to avoid rate-limiting`);
+      return this.status.pairingCode;
     }
+
+    this.activePairingPhone = cleanNumber;
+
+    // Start fresh dedicated socket for pairing code to ensure no stale/corrupted QR keys exist in auth_info
+    logger.info(`Initializing dedicated WhatsApp socket for pairing code with +${cleanNumber}...`);
+    await this.initialize(true, true);
 
     // Wait for the WebSocket connection to be fully open
     let attempts = 0;
-    while ((!this.sock || !(this.sock as any).ws?.isOpen) && attempts < 25) {
-      await new Promise((resolve) => setTimeout(resolve, 300));
+    while ((!this.sock || !(this.sock as any).ws?.isOpen) && attempts < 35) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
       attempts++;
     }
 
-    // If still not open, restart socket and wait
     if (!this.sock || !(this.sock as any).ws?.isOpen) {
-      logger.info('WebSocket not open yet, forcing fresh connection for pairing code...');
-      await this.initialize(true);
-      let retry = 0;
-      while ((!this.sock || !(this.sock as any).ws?.isOpen) && retry < 25) {
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        retry++;
-      }
-    }
-
-    if (!this.sock) {
       throw new Error('Could not establish connection to WhatsApp gateway. Please verify your internet connection.');
     }
 
+    // CRITICAL: Wait 2.5 seconds for the WebSocket connection handshake to stabilize
+    // Calling requestPairingCode too soon causes WhatsApp to reject with 428 Precondition Required
+    logger.info('Waiting for WhatsApp WebSocket handshake to stabilize...');
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+
+    if (!this.sock || !(this.sock as any).ws?.isOpen) {
+      throw new Error('WhatsApp connection dropped before pairing code could be requested. Please retry.');
+    }
+
     try {
-      logger.info(`Requesting WhatsApp pairing code for +${cleanNumber}...`);
+      logger.info(`Requesting WhatsApp pairing code from servers for +${cleanNumber}...`);
       const rawCode = await this.sock.requestPairingCode(cleanNumber);
 
       // Format code as XXXX-XXXX (e.g. ABCD-1234 or 1234-5678)
@@ -279,12 +325,16 @@ class BaileysService {
           : rawCode;
 
       this.status.pairingCode = formattedCode;
+      this.lastPairingRequest = { phone: cleanNumber, timestamp: Date.now() };
       this.notifyStatusListeners();
       logger.info(`WhatsApp pairing code generated successfully: ${formattedCode}`);
 
       return formattedCode;
     } catch (err: any) {
       logger.error({ error: err, cleanNumber }, 'Error requesting pairing code');
+      if (err?.message?.includes('429') || err?.output?.statusCode === 429) {
+        throw new Error('WhatsApp server rate-limit: Please wait 1-2 minutes before requesting another code.');
+      }
       throw new Error(err?.message || 'Failed to request pairing code from WhatsApp servers.');
     }
   }
@@ -387,6 +437,8 @@ class BaileysService {
       phoneNumber: null,
       lastConnected: null,
     };
+    this.activePairingPhone = null;
+    this.lastPairingRequest = null;
     this.reconnectAttempts = 0;
     this.isInitializing = false;
     this.notifyStatusListeners();
