@@ -150,6 +150,16 @@ export function useExpenses() {
     return result?.total || 0;
   }, [db, user]);
 
+  const getRangeTotal = useCallback(async (startDate: string, endDate: string) => {
+    if (!db || !user) return 0;
+
+    const result = await db.getFirstAsync<{ total: number }>(
+      'SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE user_id = ? AND date >= ? AND date <= ?',
+      [user.uid, startDate, endDate]
+    );
+    return result?.total || 0;
+  }, [db, user]);
+
   const getCategorySummary = useCallback(async (startDate?: string, endDate?: string) => {
     if (!db || !user) return [];
 
@@ -189,6 +199,7 @@ export function useExpenses() {
     updateExpense,
     deleteExpense,
     getMonthlyTotal,
+    getRangeTotal,
     getCategorySummary,
   };
 }

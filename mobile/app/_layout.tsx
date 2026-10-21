@@ -11,6 +11,7 @@ import { PaperProvider, MD3LightTheme } from 'react-native-paper';
 import { AuthProvider, useAuth } from '../contexts/AuthContext';
 import { DatabaseProvider } from '../contexts/DatabaseContext';
 import { ToastProvider } from '../contexts/ToastContext';
+import { LanguageProvider } from '../contexts/LanguageContext';
 import { ResponsiveContainer } from '../components/ResponsiveContainer';
 import { Colors } from '../constants/theme';
 import { View, ActivityIndicator, StyleSheet, Alert, Platform } from 'react-native';
@@ -130,15 +131,17 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <PaperProvider theme={customTheme}>
-        <AuthProvider>
-          <DatabaseProvider>
-            <ToastProvider>
-              <ResponsiveContainer>
-                <RootLayoutNav />
-              </ResponsiveContainer>
-            </ToastProvider>
-          </DatabaseProvider>
-        </AuthProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <DatabaseProvider>
+              <ToastProvider>
+                <ResponsiveContainer>
+                  <RootLayoutNav />
+                </ResponsiveContainer>
+              </ToastProvider>
+            </DatabaseProvider>
+          </AuthProvider>
+        </LanguageProvider>
       </PaperProvider>
     </SafeAreaProvider>
   );

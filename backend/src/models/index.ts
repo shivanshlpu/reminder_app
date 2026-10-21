@@ -171,3 +171,52 @@ const LoanSchema = new Schema<ILoan>({
   updatedAt: { type: Date, default: Date.now },
 });
 export const LoanModel = mongoose.model<ILoan>('Loan', LoanSchema);
+
+// Shop Schema (Khata Book - Dukan & Ration)
+export interface IShop extends Document {
+  userId: string;
+  name: string;
+  personName?: string;
+  phone?: string;
+  category: string;
+  address?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+const ShopSchema = new Schema<IShop>({
+  userId: { type: String, required: true, index: true },
+  name: { type: String, required: true },
+  personName: { type: String },
+  phone: { type: String },
+  category: { type: String, default: 'Kirana / Ration' },
+  address: { type: String },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+export const ShopModel = mongoose.model<IShop>('Shop', ShopSchema);
+
+// Shop Entry Schema (Samaan Purchases & Payments)
+export interface IShopEntry extends Document {
+  userId: string;
+  shopId: string;
+  type: 'purchase' | 'payment';
+  amount: number;
+  date: string;
+  items?: string;
+  note?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+const ShopEntrySchema = new Schema<IShopEntry>({
+  userId: { type: String, required: true, index: true },
+  shopId: { type: String, required: true, index: true },
+  type: { type: String, enum: ['purchase', 'payment'], required: true },
+  amount: { type: Number, required: true },
+  date: { type: String, required: true, index: true },
+  items: { type: String },
+  note: { type: String },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
+});
+export const ShopEntryModel = mongoose.model<IShopEntry>('ShopEntry', ShopEntrySchema);
+

@@ -135,3 +135,84 @@ export function applyDateMask(raw: string): string {
   }
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4, 8)}`;
 }
+
+/**
+ * Returns ISO start and end date for a given week.
+ * offsetWeeks: 0 for current week, -1 for last week, etc.
+ * Weeks are considered Monday to Sunday (or Sunday to Saturday). Let's use Monday as start of week.
+ */
+export function getWeekRange(offsetWeeks: number = 0): { start: string; end: string; label: string } {
+  const now = new Date();
+  const currentDay = now.getDay(); // 0 is Sunday, 1 is Monday
+  const distanceToMonday = (currentDay + 6) % 7; // Monday = 0, Sunday = 6
+  
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - distanceToMonday + offsetWeeks * 7);
+  monday.setHours(0, 0, 0, 0);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  const start = formatToISO(monday);
+  const end = formatToISO(sunday);
+
+  const label = offsetWeeks === 0
+    ? 'This Week'
+    : offsetWeeks === -1
+    ? 'Last Week'
+    : `${formatDisplayDate(start)} - ${formatDisplayDate(end)}`;
+
+  return { start, end, label };
+}
+
+/**
+ * Returns ISO start and end date for a given month (0-indexed month)
+ */
+export function getMonthRange(year: number, monthIndex: number): { start: string; end: string; label: string } {
+  const firstDay = new Date(year, monthIndex, 1);
+  const lastDay = new Date(year, monthIndex + 1, 0);
+
+  const start = formatToISO(firstDay);
+  const end = formatToISO(lastDay);
+  const label = firstDay.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
+  return { start, end, label };
+}
+
+/**
+ * Returns range for the current month
+ */
+export function getCurrentMonthRange(): { start: string; end: string; label: string } {
+  const now = new Date();
+  return getMonthRange(now.getFullYear(), now.getMonth());
+}
+
+/**
+ * Returns range for the previous month
+ */
+export function getLastMonthRange(): { start: string; end: string; label: string } {
+  const now = new Date();
+  let prevMonth = now.getMonth() - 1;
+  let year = now.getFullYear();
+  if (prevMonth < 0) {
+    prevMonth = 11;
+    year -= 1;
+  }
+  return getMonthRange(year, prevMonth);
+}
+
+/**
+ * Returns number of inclusive calendar days between two dates
+ */
+export function getDaysDifference(startDate: string | Date, endDate: string | Date): number {
+  const startIso = formatToISO(startDate);
+  const endIso = formatToISO(endDate);
+  if (!startIso || !endIso) return 1;
+  const d1 = new Date(startIso + 'T00:00:00');
+  const d2 = new Date(endIso + 'T00:00:00');
+  const diffTime = Math.abs(d2.getTime() - d1.getTime());
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1; // inclusive of both start and end day
+  return Math.max(1, diffDays);
+}
+

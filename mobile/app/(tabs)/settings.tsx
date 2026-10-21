@@ -20,6 +20,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../../contexts/AuthContext';
 import { whatsappApi, WhatsAppStatus } from '../../services/whatsapp-api';
 import { useResponsiveLayout } from '../../hooks/useResponsiveLayout';
+import { LanguageToggleButton } from '../../components/LanguageToggleButton';
 import { Colors, Spacing, BorderRadius, Fonts, Shadows } from '../../constants/theme';
 
 export default function SettingsScreen() {
@@ -212,6 +213,9 @@ export default function SettingsScreen() {
           <Text style={styles.cardSignOutText}>Sign Out</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Language Switcher Card */}
+      <LanguageToggleButton variant="card" />
 
       {/* Grid wrapper for Desktop / Stacked for Mobile */}
       <View style={isWide ? styles.gridDesktop : undefined}>

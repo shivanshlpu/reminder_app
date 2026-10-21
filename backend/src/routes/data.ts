@@ -11,6 +11,8 @@ import {
   ContactModel,
   MessageLogModel,
   LoanModel,
+  ShopModel,
+  ShopEntryModel,
 } from '../models';
 import logger from '../utils/logger';
 
@@ -289,6 +291,103 @@ router.delete('/loans/:id', async (req: Request, res: Response) => {
   try {
     await LoanModel.findByIdAndDelete(req.params.id);
     res.json({ success: true, data: { message: 'Loan record deleted' } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==================== SHOPS (KHATA BOOK) ====================
+
+// GET /api/data/shops?userId=...
+router.get('/shops', async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) {
+      res.status(400).json({ success: false, error: 'userId is required' });
+      return;
+    }
+    const shops = await ShopModel.find({ userId: String(userId) }).sort({ updatedAt: -1, createdAt: -1 });
+    res.json({ success: true, data: shops });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/data/shops
+router.post('/shops', async (req: Request, res: Response) => {
+  try {
+    const { userId, name, personName, phone, category, address } = req.body;
+    const shop = new ShopModel({
+      userId: String(userId),
+      name: String(name),
+      personName: personName || '',
+      phone: phone || '',
+      category: category || 'Kirana / Ration',
+      address: address || '',
+    });
+    await shop.save();
+    res.json({ success: true, data: shop });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/data/shops/:id
+router.delete('/shops/:id', async (req: Request, res: Response) => {
+  try {
+    await ShopModel.findByIdAndDelete(req.params.id);
+    await ShopEntryModel.deleteMany({ shopId: req.params.id });
+    res.json({ success: true, data: { message: 'Shop and entries deleted' } });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==================== SHOP ENTRIES (PURCHASES & PAYMENTS) ====================
+
+// GET /api/data/shop_entries?userId=...&shopId=...
+router.get('/shop_entries', async (req: Request, res: Response) => {
+  try {
+    const { userId, shopId } = req.query;
+    if (!userId) {
+      res.status(400).json({ success: false, error: 'userId is required' });
+      return;
+    }
+    const query: any = { userId: String(userId) };
+    if (shopId) query.shopId = String(shopId);
+
+    const entries = await ShopEntryModel.find(query).sort({ date: -1, createdAt: -1 });
+    res.json({ success: true, data: entries });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/data/shop_entries
+router.post('/shop_entries', async (req: Request, res: Response) => {
+  try {
+    const { userId, shopId, type, amount, date, items, note } = req.body;
+    const entry = new ShopEntryModel({
+      userId: String(userId),
+      shopId: String(shopId),
+      type: type || 'purchase',
+      amount: Number(amount),
+      date: String(date),
+      items: items || null,
+      note: note || null,
+    });
+    await entry.save();
+    res.json({ success: true, data: entry });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/data/shop_entries/:id
+router.delete('/shop_entries/:id', async (req: Request, res: Response) => {
+  try {
+    await ShopEntryModel.findByIdAndDelete(req.params.id);
+    res.json({ success: true, data: { message: 'Shop entry deleted' } });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
