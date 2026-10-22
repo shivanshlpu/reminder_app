@@ -73,8 +73,8 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 });
 
 // Start server
-app.listen(PORT, async () => {
-  logger.info(`🚀 Server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', async () => {
+  logger.info(`🚀 Server running on http://0.0.0.0:${PORT} (and http://localhost:${PORT})`);
 
   // Connect to MongoDB Atlas
   await connectMongoDB();

@@ -63,6 +63,18 @@ const RESET_TIME_OPTIONS = [
 
 const PRESET_TEMPLATES = [
   {
+    label: '💼 Arrived at Office',
+    template: 'Hey, I have safely arrived at the office at {time}.',
+    defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri'], // Weekdays only
+    defaultReset: '12:00 AM',
+  },
+  {
+    label: '💼 Office Work Started',
+    template: 'Reached office safely at {time}. Starting work for the day!',
+    defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri'], // Weekdays only
+    defaultReset: '12:00 AM',
+  },
+  {
     label: '🎓 College Arrival',
     template: 'Hey, I have safely reached college for lectures at {time}.',
     defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri'], // Weekdays only
@@ -95,6 +107,12 @@ const PRESET_TEMPLATES = [
   {
     label: '📚 Library Study',
     template: 'Reached library at {time} for study session.',
+    defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'],
+    defaultReset: '12:00 AM',
+  },
+  {
+    label: '🏃 Gym Workout',
+    template: 'Reached gym at {time} for workout session.',
     defaultDays: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat'],
     defaultReset: '12:00 AM',
   },
@@ -360,7 +378,7 @@ export default function LocationsScreen() {
       showMessage('Preset Applied', 'Hostel (All 7 Days, 12 PM reset)', 'info');
     } else if (type === 'office') {
       setLocationName('Office');
-      setMessageTemplate('Reached office safely at {time}.');
+      setMessageTemplate('Hey, I have safely arrived at the office at {time}.');
       setSelectedDays(['mon', 'tue', 'wed', 'thu', 'fri']);
       setResetTime('12:00 AM');
       showMessage('Preset Applied', 'Office (Weekdays only, 12 AM reset)', 'info');
@@ -375,10 +393,11 @@ export default function LocationsScreen() {
     if (item.defaultReset) {
       setResetTime(item.defaultReset);
     }
-    if (!locationName || locationName === 'Hostel Gate' || locationName === 'College' || locationName === 'Home') {
+    if (!locationName || locationName === 'Hostel Gate' || locationName === 'College' || locationName === 'Home' || locationName === 'Office') {
       if (item.label.includes('College')) setLocationName('College Gate');
       else if (item.label.includes('Home')) setLocationName('Home');
       else if (item.label.includes('Hostel')) setLocationName('Hostel Gate');
+      else if (item.label.includes('Office')) setLocationName('Office');
     }
     showMessage('Template Selected', `Applied preset: ${item.label}`, 'info');
   };
@@ -984,17 +1003,21 @@ export default function LocationsScreen() {
                 <Text style={styles.sectionSubtext}>Choose a quick message preset or customize:</Text>
 
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templateChipsScroll}>
-                  {PRESET_TEMPLATES.map((item, idx) => (
-                    <Chip
-                      key={idx}
-                      mode="outlined"
-                      onPress={() => applyPresetTemplate(item)}
-                      style={styles.templateChip}
-                      textStyle={{ fontSize: 11, fontWeight: '600' }}
-                    >
-                      {item.label}
-                    </Chip>
-                  ))}
+                  {PRESET_TEMPLATES.map((item, idx) => {
+                    const isSelected = messageTemplate === item.template;
+                    return (
+                      <Chip
+                        key={idx}
+                        mode="outlined"
+                        selected={isSelected}
+                        onPress={() => applyPresetTemplate(item)}
+                        style={[styles.templateChip, isSelected && styles.templateChipSelected]}
+                        textStyle={{ fontSize: 11, fontWeight: '600', color: isSelected ? Colors.secondary : Colors.text }}
+                      >
+                        {item.label}
+                      </Chip>
+                    );
+                  })}
                 </ScrollView>
 
                 <TextInput
@@ -1024,6 +1047,21 @@ export default function LocationsScreen() {
                     <Text style={styles.tagText}>{'{date}'}</Text>
                   </TouchableOpacity>
                 </View>
+
+                {messageTemplate.trim().length > 0 && (
+                  <View style={styles.messageLivePreview}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                      <MaterialCommunityIcons name="whatsapp" size={14} color="#16A34A" />
+                      <Text style={styles.messagePreviewLabel}>WhatsApp Message Preview:</Text>
+                    </View>
+                    <Text style={styles.messagePreviewText}>
+                      "{messageTemplate
+                        .replace(/\{location\}/g, locationName || 'Office')
+                        .replace(/\{time\}/g, new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }))
+                        .replace(/\{date\}/g, new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }))}"
+                    </Text>
+                  </View>
+                )}
               </View>
 
               {/* STEP 4: Active Days & 24h Reset Schedule */}
@@ -1579,9 +1617,34 @@ const styles = StyleSheet.create({
   templatesLabel: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary, marginBottom: Spacing.xs },
   templateChipsScroll: { flexDirection: 'row', marginBottom: Spacing.xs, marginTop: Spacing.xs },
   templateChip: { marginRight: Spacing.xs, backgroundColor: Colors.background },
+  templateChipSelected: {
+    backgroundColor: '#F3E8FF',
+    borderColor: Colors.secondary,
+    borderWidth: 1.5,
+  },
   tagsRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.xs },
   tagBadge: { backgroundColor: Colors.secondaryBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
   tagText: { fontSize: 11, color: Colors.secondary, fontWeight: '700' },
+  messageLivePreview: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  messagePreviewLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#15803D',
+    textTransform: 'uppercase',
+  },
+  messagePreviewText: {
+    fontSize: Fonts.sizes.xs,
+    color: Colors.text,
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
   modalFooter: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
