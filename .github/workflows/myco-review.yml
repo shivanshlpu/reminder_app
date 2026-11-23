@@ -1,0 +1,54 @@
+name: MyCo PR Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  checks: write
+jobs:
+  review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      MYCO_CONTROL_PLANE_URL: "https://myco-deploy.onrender.com"
+      MYCO_OIDC_AUDIENCE: "https://myco.intelligence"
+    steps:
+      - name: Request MyCo review access
+        id: myco_access
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          try {
+            const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL);
+            url.searchParams.set('audience', process.env.MYCO_OIDC_AUDIENCE);
+            const oidc = await fetch(url, { redirect: 'error', headers: { Authorization: 'Bearer ' + process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN } });
+            if (!oidc.ok) throw new Error();
+            const { value } = await oidc.json();
+            const response = await fetch(process.env.MYCO_CONTROL_PLANE_URL + '/api/v1/entitlements/authorize', {
+              method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ oidc_token: value, repository: process.env.GITHUB_REPOSITORY, run_id: process.env.GITHUB_RUN_ID })
+            });
+            if (!response.ok) throw new Error();
+            const grant = await response.json();
+            if (!grant.authorized || !/^[\w.-]+$/.test(grant.grant_token) || !/^[\w-]+$/.test(grant.customer_id)) throw new Error();
+            console.log('::add-mask::' + grant.grant_token);
+            appendFileSync(process.env.GITHUB_OUTPUT, 'grant=' + grant.grant_token + '\nclient_id=' + grant.customer_id + '\n');
+          } catch {
+            console.error('MyCo could not authorize this review. Check repository access and the developer seat in MyCo.');
+            process.exitCode = 1;
+          }
+          NODE
+      - name: Run MyCo review
+        uses: MycoIntelligence/myco-bundled-action@fa557ec81ded18bd54b65578ffdece8be2425856
+        with:
+          pr_link: ${{ github.event.pull_request.html_url }}
+          api_key: ${{ secrets.LLM_API_KEY || secrets.MYCO_LLM_KEY }}
+          llm_provider: ${{ vars.LLM_PROVIDER || 'groq' }}
+          follow_intent_links: 'false'
+          create_tickets: 'false'
+          metrics_endpoint: ${{ env.MYCO_CONTROL_PLANE_URL }}/api/ingest-metrics
+          metrics_api_key: ${{ steps.myco_access.outputs.grant }}
+          client_id: ${{ steps.myco_access.outputs.client_id }}
